@@ -1,0 +1,400 @@
+<!--
+  360-degree Image Metadata Injector & Cloner
+  Copyright (c) 2026 Mark.Hiraiwa
+  SPDX-License-Identifier: MIT
+-->
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>360°パノラマ画像 メタデータ復元・移植ツール 🌐✨</title>
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --border: #cbd5e1;
+      --text: #1e293b;
+      --text-muted: #64748b;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      max-width: 720px;
+      margin: 40px auto;
+      padding: 0 20px;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+    .card {
+      background: var(--card-bg);
+      border-radius: 16px;
+      padding: 32px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+      border: 1px solid var(--border);
+    }
+    h1 {
+      font-size: 24px;
+      margin: 0 0 8px 0;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .description {
+      color: var(--text-muted);
+      margin-bottom: 24px;
+      font-size: 14px;
+    }
+    .mode-selector {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 24px;
+      background: #f1f5f9;
+      padding: 6px;
+      border-radius: 12px;
+    }
+    .mode-tab {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-muted);
+      transition: all 0.2s ease;
+    }
+    .mode-tab input { display: none; }
+    .mode-tab.active {
+      background: #fff;
+      color: var(--primary);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    }
+    .drop-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .drop-grid.single {
+      grid-template-columns: 1fr;
+    }
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: 12px;
+      padding: 24px 16px;
+      text-align: center;
+      background: #fafafa;
+      cursor: pointer;
+      min-height: 150px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      transition: all 0.2s ease;
+    }
+    .drop-zone:hover, .drop-zone.dragover {
+      border-color: var(--primary);
+      background: #eff6ff;
+    }
+    .drop-icon { font-size: 28px; margin-bottom: 8px; }
+    .drop-title { font-weight: 600; font-size: 15px; margin-bottom: 4px; }
+    .drop-sub { font-size: 12px; color: var(--text-muted); }
+    .file-name {
+      margin-top: 10px;
+      font-size: 12px;
+      font-weight: bold;
+      color: #059669;
+      background: #ecfdf5;
+      padding: 4px 8px;
+      border-radius: 6px;
+      word-break: break-all;
+    }
+    button {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 14px;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+      transition: background 0.2s ease;
+    }
+    button:hover:not(:disabled) { background: var(--primary-hover); }
+    button:disabled { background: #94a3b8; cursor: not-allowed; }
+    #status {
+      margin-top: 16px;
+      font-size: 14px;
+      font-weight: 600;
+      text-align: center;
+      min-height: 22px;
+    }
+    .compatibility-note {
+      margin-top: 24px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <h1>🌐 360°パノラマ メタデータ復元ツール ✨</h1>
+    <div class="description">
+      AI編集や画像加工で消えてしまった360度パノラマ識別情報（XMP / Exif）を復元・付与します。
+    </div>
+
+    <!-- モード選択タブ -->
+    <div class="mode-selector">
+      <label class="mode-tab active" id="tabClone">
+        <input type="radio" name="mode" value="clone" checked onchange="switchMode()">
+        🔄 元ファイルから移植
+      </label>
+      <label class="mode-tab" id="tabGenerate">
+        <input type="radio" name="mode" value="generate" onchange="switchMode()">
+        ⚙️ 360°タグを新規生成
+      </label>
+    </div>
+
+    <!-- ドロップエリア -->
+    <div class="drop-grid" id="dropGrid">
+      <!-- 編集後画像 -->
+      <div class="drop-zone" id="editedDrop">
+        <div class="drop-icon">🎨</div>
+        <div class="drop-title">編集後の画像 (JPEG)</div>
+        <div class="drop-sub">AI加工などでタグが消えたファイル</div>
+        <div class="file-name" id="editedFileName" style="display: none;"></div>
+        <input type="file" id="editedInput" accept="image/jpeg,image/jpg" style="display: none;">
+      </div>
+
+      <!-- 撮影元画像 -->
+      <div class="drop-zone" id="originalDrop">
+        <div class="drop-icon">📷</div>
+        <div class="drop-title">加工前の元画像 (JPEG)</div>
+        <div class="drop-sub">撮影機器から直接取り出した元ファイル</div>
+        <div class="file-name" id="originalFileName" style="display: none;"></div>
+        <input type="file" id="originalInput" accept="image/jpeg,image/jpg" style="display: none;">
+      </div>
+    </div>
+
+    <button id="processBtn" disabled>メタデータを付与して保存 💾</button>
+    <div id="status"></div>
+
+    <div class="compatibility-note">
+      <span>対応: 全360度カメラ（全天球・パノラマ / Equirectangular形式）</span>
+      <span>※完全ローカル処理（画像は外部送信されません）</span>
+    </div>
+  </div>
+
+  <script>
+    let mode = 'clone';
+    let editedFile = null;
+    let originalFile = null;
+    let editedDimensions = { width: 0, height: 0 };
+
+    const editedDrop = document.getElementById('editedDrop');
+    const originalDrop = document.getElementById('originalDrop');
+    const editedInput = document.getElementById('editedInput');
+    const originalInput = document.getElementById('originalInput');
+    const processBtn = document.getElementById('processBtn');
+    const statusDiv = document.getElementById('status');
+    const dropGrid = document.getElementById('dropGrid');
+    const tabClone = document.getElementById('tabClone');
+    const tabGenerate = document.getElementById('tabGenerate');
+
+    function switchMode() {
+      mode = document.querySelector('input[name="mode"]:checked').value;
+      if (mode === 'generate') {
+        tabGenerate.classList.add('active');
+        tabClone.classList.remove('active');
+        originalDrop.style.display = 'none';
+        dropGrid.classList.add('single');
+      } else {
+        tabClone.classList.add('active');
+        tabGenerate.classList.remove('active');
+        originalDrop.style.display = 'flex';
+        dropGrid.classList.remove('single');
+      }
+      validateInputs();
+    }
+
+    function setupDropZone(dropZone, input, onFileSelected) {
+      dropZone.onclick = () => input.click();
+      input.onchange = (e) => onFileSelected(e.target.files[0]);
+      dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('dragover'); };
+      dropZone.ondragleave = () => { dropZone.classList.remove('dragover'); };
+      dropZone.ondrop = (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        if (e.dataTransfer.files.length) onFileSelected(e.dataTransfer.files[0]);
+      };
+    }
+
+    setupDropZone(editedDrop, editedInput, (file) => {
+      if (!file || !file.type.match(/image\/jpeg/)) return alert('⚠️ JPEG画像（.jpg / .jpeg）を選択してください！');
+      editedFile = file;
+      const el = document.getElementById('editedFileName');
+      el.textContent = `✓ ${file.name}`;
+      el.style.display = 'inline-block';
+      
+      const img = new Image();
+      img.onload = () => {
+        editedDimensions = { width: img.naturalWidth, height: img.naturalHeight };
+        validateInputs();
+      };
+      img.src = URL.createObjectURL(file);
+    });
+
+    setupDropZone(originalDrop, originalInput, (file) => {
+      if (!file || !file.type.match(/image\/jpeg/)) return alert('⚠️ JPEG画像（.jpg / .jpeg）を選択してください！');
+      originalFile = file;
+      const el = document.getElementById('originalFileName');
+      el.textContent = `✓ ${file.name}`;
+      el.style.display = 'inline-block';
+      validateInputs();
+    });
+
+    function validateInputs() {
+      statusDiv.textContent = '';
+      if (mode === 'clone') {
+        processBtn.disabled = !(editedFile && originalFile);
+      } else {
+        processBtn.disabled = !editedFile;
+      }
+    }
+
+    processBtn.onclick = async () => {
+      statusDiv.style.color = 'var(--text)';
+      statusDiv.textContent = '⏳ 処理中...';
+      try {
+        const editedBuffer = await editedFile.arrayBuffer();
+        let resultBuffer;
+
+        if (mode === 'clone') {
+          const originalBuffer = await originalFile.arrayBuffer();
+          resultBuffer = copyAllMetadata(originalBuffer, editedBuffer);
+        } else {
+          resultBuffer = injectGPanoXMP(editedBuffer, editedDimensions.width, editedDimensions.height);
+        }
+
+        const blob = new Blob([resultBuffer], { type: 'image/jpeg' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = editedFile.name.replace(/\.[^/.]+$/, "") + "_360fixed.jpg";
+        a.click();
+        URL.revokeObjectURL(url);
+
+        statusDiv.style.color = '#059669';
+        statusDiv.textContent = '✅ 完了！360度パノラマ画像として保存されました 🎉';
+      } catch (err) {
+        console.error(err);
+        statusDiv.style.color = '#dc2626';
+        statusDiv.textContent = '❌ 処理中にエラーが発生しました。ファイル形式を確認してください。';
+      }
+    };
+
+    // 全メタデータ（APPセグメント群）の完全コピー
+    function copyAllMetadata(srcJpg, dstJpg) {
+      const srcBytes = new Uint8Array(srcJpg);
+      const dstBytes = new Uint8Array(dstJpg);
+
+      const metadataSegments = [];
+      let i = 2; // SOI (0xFFD8) スキップ
+      while (i < srcBytes.length - 1) {
+        if (srcBytes[i] === 0xFF) {
+          const marker = srcBytes[i + 1];
+          if (marker === 0xDA || marker === 0xD9) break; // SOS または EOI で終了
+          if (marker >= 0xE0 && marker <= 0xFE) {
+            const length = (srcBytes[i + 2] << 8) + srcBytes[i + 3];
+            metadataSegments.push(srcBytes.slice(i, i + 2 + length));
+            i += 2 + length;
+            continue;
+          }
+        }
+        i++;
+      }
+
+      let dstSOS = 2;
+      let j = 2;
+      while (j < dstBytes.length - 1) {
+        if (dstBytes[j] === 0xFF && dstBytes[j + 1] === 0xDA) {
+          dstSOS = j;
+          break;
+        } else if (dstBytes[j] === 0xFF && (dstBytes[j + 1] >= 0xE0 && dstBytes[j + 1] <= 0xFE)) {
+          const len = (dstBytes[j + 2] << 8) + dstBytes[j + 3];
+          j += 2 + len;
+          continue;
+        }
+        j++;
+      }
+
+      const totalMetaLen = metadataSegments.reduce((sum, seg) => sum + seg.length, 0);
+      const dstBody = dstBytes.subarray(dstSOS);
+      const out = new Uint8Array(2 + totalMetaLen + dstBody.length);
+
+      out.set([0xFF, 0xD8], 0);
+      let offset = 2;
+      for (const seg of metadataSegments) {
+        out.set(seg, offset);
+        offset += seg.length;
+      }
+      out.set(dstBody, offset);
+
+      return out.buffer;
+    }
+
+    // Google Photo Sphere (GPano) 準拠の標準XMP生成
+    function injectGPanoXMP(jpegBuffer, width, height) {
+      const xmpString = `<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 5.1.0-jc003">
+  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+    <rdf:Description rdf:about=""
+      xmlns:GPano="http://ns.google.com/photos/1.0/panorama/">
+      <GPano:UsePanoramaViewer>True</GPano:UsePanoramaViewer>
+      <GPano:ProjectionType>equirectangular</GPano:ProjectionType>
+      <GPano:FullPanoWidthPixels>${width}</GPano:FullPanoWidthPixels>
+      <GPano:FullPanoHeightPixels>${height}</GPano:FullPanoHeightPixels>
+      <GPano:CroppedAreaImageWidthPixels>${width}</GPano:CroppedAreaImageWidthPixels>
+      <GPano:CroppedAreaImageHeightPixels>${height}</GPano:CroppedAreaImageHeightPixels>
+      <GPano:CroppedAreaLeftPixels>0</GPano:CroppedAreaLeftPixels>
+      <GPano:CroppedAreaTopPixels>0</GPano:CroppedAreaTopPixels>
+    </rdf:Description>
+  </rdf:RDF>
+</x:xmpmeta>`;
+
+      const encoder = new TextEncoder();
+      const namespace = "http://ns.adobe.com/xap/1.0/\0";
+      const xmpBytes = encoder.encode(namespace + xmpString);
+      const app1Length = 2 + xmpBytes.length;
+
+      const app1Header = new Uint8Array(4);
+      app1Header[0] = 0xFF;
+      app1Header[1] = 0xE1;
+      app1Header[2] = (app1Length >> 8) & 0xFF;
+      app1Header[3] = app1Length & 0xFF;
+
+      const srcBytes = new Uint8Array(jpegBuffer);
+      const out = new Uint8Array(srcBytes.length + app1Header.length + xmpBytes.length);
+      out.set(srcBytes.subarray(0, 2), 0);
+      out.set(app1Header, 2);
+      out.set(xmpBytes, 6);
+      out.set(srcBytes.subarray(2), 6 + xmpBytes.length);
+
+      return out.buffer;
+    }
+  </script>
+</body>
+</html>
