@@ -1,5 +1,5 @@
 <!--
-  360-degree Image Metadata Injector & Cloner (pano-fixer)
+  360-degree Image Metadata Injector, Cloner & Heading Adjuster (pano-fixer)
   Copyright (c) 2026 MrHiraiwa
   SPDX-License-Identifier: MIT
 -->
@@ -8,7 +8,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>360°パノラマ画像 メタデータ復元・移植ツール 🌐✨</title>
+  <title>360°パノラマ画像 メタデータ復元・方角調整ツール 🌐🧭</title>
   <style>
     :root {
       --primary: #2563eb;
@@ -116,7 +116,69 @@
       border-radius: 6px;
       word-break: break-all;
     }
-    button {
+
+    /* 方角調整コントロール */
+    .heading-panel {
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 24px;
+    }
+    .heading-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .heading-title {
+      font-size: 14px;
+      font-weight: bold;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .heading-value {
+      font-size: 14px;
+      font-weight: bold;
+      color: var(--primary);
+      background: #eff6ff;
+      padding: 2px 8px;
+      border-radius: 6px;
+    }
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .slider-row input[type="range"] {
+      flex: 1;
+      accent-color: var(--primary);
+      cursor: pointer;
+    }
+    .preset-buttons {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .preset-btn {
+      background: #fff;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      flex: 1;
+      transition: all 0.15s ease;
+    }
+    .preset-btn:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+
+    button.primary-btn {
       background: var(--primary);
       color: white;
       border: none;
@@ -128,8 +190,8 @@
       width: 100%;
       transition: background 0.2s ease;
     }
-    button:hover:not(:disabled) { background: var(--primary-hover); }
-    button:disabled { background: #94a3b8; cursor: not-allowed; }
+    button.primary-btn:hover:not(:disabled) { background: var(--primary-hover); }
+    button.primary-btn:disabled { background: #94a3b8; cursor: not-allowed; }
     #status {
       margin-top: 16px;
       font-size: 14px;
@@ -153,9 +215,9 @@
 <body>
 
   <div class="card">
-    <h1>🌐 360°パノラマ メタデータ復元ツール ✨</h1>
+    <h1>🌐 360°パノラマ メタデータ復元・方角調整 🧭</h1>
     <div class="description">
-      AI編集や画像加工で消えてしまった360度パノラマ識別情報（XMP / Exif）を復元・付与します。PNG画像も自動で最高画質JPEGに変換して処理可能です。
+      AI編集で消えたパノラマメタデータの復元に加え、Google Maps / ストリートビュー用の方角（画像中央が向いている方位）を調整できます。
     </div>
 
     <!-- モード選択タブ -->
@@ -172,7 +234,6 @@
 
     <!-- ドロップエリア -->
     <div class="drop-grid" id="dropGrid">
-      <!-- 編集後画像 (JPEG / PNG 対応) -->
       <div class="drop-zone" id="editedDrop">
         <div class="drop-icon">🎨</div>
         <div class="drop-title">編集後の画像</div>
@@ -181,7 +242,6 @@
         <input type="file" id="editedInput" accept="image/jpeg,image/jpg,image/png" style="display: none;">
       </div>
 
-      <!-- 撮影元画像 (JPEG) -->
       <div class="drop-zone" id="originalDrop">
         <div class="drop-icon">📷</div>
         <div class="drop-title">加工前の元画像 (JPEG)</div>
@@ -191,12 +251,31 @@
       </div>
     </div>
 
-    <button id="processBtn" disabled>メタデータを付与して保存 💾</button>
+    <!-- 方角（Heading）調整コントロール -->
+    <div class="heading-panel">
+      <div class="heading-header">
+        <div class="heading-title">🧭 画像中央が向いている方角 (Heading)</div>
+        <div class="heading-value" id="headingValText">0° (北)</div>
+      </div>
+      <div class="slider-row">
+        <span style="font-size:12px; color:var(--text-muted);">0°</span>
+        <input type="range" id="headingSlider" min="0" max="359" value="0" step="1" oninput="updateHeadingUI(this.value)">
+        <span style="font-size:12px; color:var(--text-muted);">359°</span>
+      </div>
+      <div class="preset-buttons">
+        <button type="button" class="preset-btn" onclick="setHeading(0)">北 (0°)</button>
+        <button type="button" class="preset-btn" onclick="setHeading(90)">東 (90°)</button>
+        <button type="button" class="preset-btn" onclick="setHeading(180)">南 (180°)</button>
+        <button type="button" class="preset-btn" onclick="setHeading(270)">西 (270°)</button>
+      </div>
+    </div>
+
+    <button id="processBtn" class="primary-btn" disabled>メタデータを付与・調整して保存 💾</button>
     <div id="status"></div>
 
     <div class="compatibility-note">
       <span>入力対応: JPEG / PNG ➔ 保存: メタデータ付与JPEG (Equirectangular)</span>
-      <span>※完全ローカル処理（外部送信なし）</span>
+      <span>※Google Maps / Google Photo Sphere 規格準拠</span>
     </div>
   </div>
 
@@ -205,6 +284,7 @@
     let editedFile = null;
     let originalFile = null;
     let editedImageEl = null;
+    let currentHeading = 0;
 
     const editedDrop = document.getElementById('editedDrop');
     const originalDrop = document.getElementById('originalDrop');
@@ -215,6 +295,29 @@
     const dropGrid = document.getElementById('dropGrid');
     const tabClone = document.getElementById('tabClone');
     const tabGenerate = document.getElementById('tabGenerate');
+    const headingSlider = document.getElementById('headingSlider');
+    const headingValText = document.getElementById('headingValText');
+
+    function getDirectionName(deg) {
+      if (deg >= 338 || deg <= 22) return '北';
+      if (deg > 22 && deg < 68) return '北東';
+      if (deg >= 68 && deg <= 112) return '東';
+      if (deg > 112 && deg < 158) return '南東';
+      if (deg >= 158 && deg <= 202) return '南';
+      if (deg > 202 && deg < 248) return '南西';
+      if (deg >= 248 && deg <= 292) return '西';
+      return '北西';
+    }
+
+    function updateHeadingUI(val) {
+      currentHeading = parseInt(val, 10);
+      headingValText.textContent = `${currentHeading}° (${getDirectionName(currentHeading)})`;
+    }
+
+    function setHeading(val) {
+      headingSlider.value = val;
+      updateHeadingUI(val);
+    }
 
     function switchMode() {
       mode = document.querySelector('input[name="mode"]:checked').value;
@@ -264,7 +367,7 @@
       img.src = URL.createObjectURL(file);
     });
 
-    setupDropZone(originalDrop, originalInput, (file) => {
+    setupDropZone(originalDrop, originalInput, async (file) => {
       if (!file || !file.type.match(/image\/(jpeg|jpg)/)) {
         alert('⚠️ 元画像はメタデータが含まれるJPEGファイル（.jpg / .jpeg）を選択してください！');
         return;
@@ -273,6 +376,18 @@
       const el = document.getElementById('originalFileName');
       el.textContent = `✓ ${file.name}`;
       el.style.display = 'inline-block';
+
+      // 元画像から既存のPoseHeadingDegreesを抽出してスライダーに自動反映
+      try {
+        const buf = await file.arrayBuffer();
+        const existingHeading = extractHeadingDegrees(buf);
+        if (existingHeading !== null) {
+          setHeading(Math.round(existingHeading));
+        }
+      } catch (e) {
+        console.warn('Heading extraction error', e);
+      }
+
       validateInputs();
     });
 
@@ -285,7 +400,6 @@
       }
     }
 
-    // PNG等の画像を最高画質(1.0)のJPEG ArrayBufferへ変換
     async function convertImageToJpegBuffer(img) {
       const canvas = document.createElement('canvas');
       canvas.width = img.naturalWidth;
@@ -301,38 +415,32 @@
       });
     }
 
-    // JPEGセグメントを安全に分割するパーサー
     function parseJpegSegments(bytes) {
       const appSegments = [];
       const otherSegments = [];
-      let i = 2; // 0xFFD8 (SOI) をスキップ
+      let i = 2; // 0xFFD8
 
       while (i < bytes.length - 1) {
         if (bytes[i] === 0xFF) {
           const marker = bytes[i + 1];
-          // SOS (Scan Data開始) または 不明マーカーで停止し残りを全て画像データとして扱う
           if (marker === 0xDA || marker === 0xD9 || marker === 0x00) {
             otherSegments.push(bytes.subarray(i));
             break;
           }
 
-          // スタンドアロンマーカー (RSTm, TEM など)
           if ((marker >= 0xD0 && marker <= 0xD7) || marker === 0x01) {
             otherSegments.push(bytes.subarray(i, i + 2));
             i += 2;
             continue;
           }
 
-          // 長さフィールドを持つ標準セグメント
           if (i + 3 < bytes.length) {
             const length = (bytes[i + 2] << 8) + bytes[i + 3];
             const segment = bytes.subarray(i, i + 2 + length);
             
-            // APP0〜APP15, COM (メタデータ系)
             if ((marker >= 0xE0 && marker <= 0xEF) || marker === 0xFE) {
               appSegments.push(segment);
             } else {
-              // DQT, DHT, SOF, DRI など画像描画に必須なセグメント
               otherSegments.push(segment);
             }
             i += 2 + length;
@@ -343,6 +451,49 @@
       }
 
       return { appSegments, otherSegments };
+    }
+
+    // XMPからPoseHeadingDegreesを検出
+    function extractHeadingDegrees(buffer) {
+      const bytes = new Uint8Array(buffer);
+      const str = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+      const match = str.match(/GPano:PoseHeadingDegrees=["']?([0-9.]+)/i);
+      return match ? parseFloat(match[1]) : null;
+    }
+
+    // 移植モード時：既存XMP内のPoseHeadingDegreesを上書き（または注入）
+    function updateHeadingInSegments(appSegments, width, height, heading) {
+      let xmpFound = false;
+      const updatedSegments = appSegments.map(seg => {
+        if (seg[0] === 0xFF && seg[1] === 0xE1) {
+          const header = new TextDecoder().decode(seg.subarray(4, 33));
+          if (header.startsWith("http://ns.adobe.com/xap/1.0/")) {
+            xmpFound = true;
+            let xmpStr = new TextDecoder('utf-8').decode(seg.subarray(33));
+            if (/GPano:PoseHeadingDegrees/i.test(xmpStr)) {
+              xmpStr = xmpStr.replace(/GPano:PoseHeadingDegrees="[^"]*"/gi, `GPano:PoseHeadingDegrees="${heading.toFixed(1)}"`);
+              xmpStr = xmpStr.replace(/<GPano:PoseHeadingDegrees>[^<]*<\/GPano:PoseHeadingDegrees>/gi, `<GPano:PoseHeadingDegrees>${heading.toFixed(1)}</GPano:PoseHeadingDegrees>`);
+            } else {
+              xmpStr = xmpStr.replace(/<rdf:Description\b([^>]*)>/i, `<rdf:Description$1 GPano:PoseHeadingDegrees="${heading.toFixed(1)}">`);
+            }
+            const encoder = new TextEncoder();
+            const payload = encoder.encode("http://ns.adobe.com/xap/1.0/\0" + xmpStr);
+            const len = 2 + payload.length;
+            const newSeg = new Uint8Array(2 + len);
+            newSeg[0] = 0xFF; newSeg[1] = 0xE1;
+            newSeg[2] = (len >> 8) & 0xFF;
+            newSeg[3] = len & 0xFF;
+            newSeg.set(payload, 4);
+            return newSeg;
+          }
+        }
+        return seg;
+      });
+
+      if (!xmpFound) {
+        updatedSegments.push(createGPanoXmpSegment(width, height, heading));
+      }
+      return updatedSegments;
     }
 
     processBtn.onclick = async () => {
@@ -366,17 +517,16 @@
           const originalBuffer = await originalFile.arrayBuffer();
           const srcBytes = new Uint8Array(originalBuffer);
           const srcParsed = parseJpegSegments(srcBytes);
-          metadataSegments = srcParsed.appSegments;
+          metadataSegments = updateHeadingInSegments(srcParsed.appSegments, editedImageEl.naturalWidth, editedImageEl.naturalHeight, currentHeading);
         } else {
-          metadataSegments = [createGPanoXmpSegment(editedImageEl.naturalWidth, editedImageEl.naturalHeight)];
+          metadataSegments = [createGPanoXmpSegment(editedImageEl.naturalWidth, editedImageEl.naturalHeight, currentHeading)];
         }
 
-        // SOI (0xFFD8) + メタデータセグメント + 編集後画像の画像構成セグメント(DQT/DHT/SOF/SOS)
         const metaLen = metadataSegments.reduce((sum, seg) => sum + seg.length, 0);
         const bodyLen = dstParsed.otherSegments.reduce((sum, seg) => sum + seg.length, 0);
 
         const out = new Uint8Array(2 + metaLen + bodyLen);
-        out.set([0xFF, 0xD8], 0); // SOI
+        out.set([0xFF, 0xD8], 0);
 
         let offset = 2;
         for (const seg of metadataSegments) {
@@ -392,12 +542,12 @@
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = editedFile.name.replace(/\.[^/.]+$/, "") + "_360fixed.jpg";
+        a.download = editedFile.name.replace(/\.[^/.]+$/, "") + `_heading${currentHeading}_360fixed.jpg`;
         a.click();
         URL.revokeObjectURL(url);
 
         statusDiv.style.color = '#059669';
-        statusDiv.textContent = '✅ 完了！360度パノラマ画像（JPEG）として保存されました 🎉';
+        statusDiv.textContent = `✅ 完了！方角（${currentHeading}°）を設定して保存しました 🎉`;
       } catch (err) {
         console.error(err);
         statusDiv.style.color = '#dc2626';
@@ -405,14 +555,15 @@
       }
     };
 
-    // Google Photo Sphere (GPano) 準拠の標準XMP APP1セグメント生成
-    function createGPanoXmpSegment(width, height) {
+    // Google Photo Sphere (GPano) 準拠の標準XMP生成（PoseHeadingDegrees を付与）
+    function createGPanoXmpSegment(width, height, heading) {
       const xmpString = `<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 5.1.0-jc003">
   <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
     <rdf:Description rdf:about=""
       xmlns:GPano="http://ns.google.com/photos/1.0/panorama/">
       <GPano:UsePanoramaViewer>True</GPano:UsePanoramaViewer>
       <GPano:ProjectionType>equirectangular</GPano:ProjectionType>
+      <GPano:PoseHeadingDegrees>${heading.toFixed(1)}</GPano:PoseHeadingDegrees>
       <GPano:FullPanoWidthPixels>${width}</GPano:FullPanoWidthPixels>
       <GPano:FullPanoHeightPixels>${height}</GPano:FullPanoHeightPixels>
       <GPano:CroppedAreaImageWidthPixels>${width}</GPano:CroppedAreaImageWidthPixels>
