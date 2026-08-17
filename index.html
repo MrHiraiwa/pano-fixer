@@ -1,12 +1,13 @@
 <!--
-  360-degree Image Metadata Injector & Cloner
-  Copyright (c) 2026 Mark.Hiraiwa
+  360-degree Image Metadata Injector & Cloner (pano-fixer)
+  Copyright (c) 2026 Mark Hiraiwa
   SPDX-License-Identifier: MIT
 -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>360°パノラマ画像 メタデータ復元・移植ツール 🌐✨</title>
   <style>
     :root {
@@ -154,7 +155,7 @@
   <div class="card">
     <h1>🌐 360°パノラマ メタデータ復元ツール ✨</h1>
     <div class="description">
-      AI編集や画像加工で消えてしまった360度パノラマ識別情報（XMP / Exif）を復元・付与します。
+      AI編集や画像加工で消えてしまった360度パノラマ識別情報（XMP / Exif）を復元・付与します。PNG画像も自動で最高画質JPEGに変換して処理可能です。
     </div>
 
     <!-- モード選択タブ -->
@@ -171,16 +172,16 @@
 
     <!-- ドロップエリア -->
     <div class="drop-grid" id="dropGrid">
-      <!-- 編集後画像 -->
+      <!-- 編集後画像 (JPEG / PNG 対応) -->
       <div class="drop-zone" id="editedDrop">
         <div class="drop-icon">🎨</div>
-        <div class="drop-title">編集後の画像 (JPEG)</div>
-        <div class="drop-sub">AI加工などでタグが消えたファイル</div>
+        <div class="drop-title">編集後の画像</div>
+        <div class="drop-sub">JPEG または PNG (自動変換)</div>
         <div class="file-name" id="editedFileName" style="display: none;"></div>
-        <input type="file" id="editedInput" accept="image/jpeg,image/jpg" style="display: none;">
+        <input type="file" id="editedInput" accept="image/jpeg,image/jpg,image/png" style="display: none;">
       </div>
 
-      <!-- 撮影元画像 -->
+      <!-- 撮影元画像 (JPEG) -->
       <div class="drop-zone" id="originalDrop">
         <div class="drop-icon">📷</div>
         <div class="drop-title">加工前の元画像 (JPEG)</div>
@@ -194,8 +195,8 @@
     <div id="status"></div>
 
     <div class="compatibility-note">
-      <span>対応: 全360度カメラ（全天球・パノラマ / Equirectangular形式）</span>
-      <span>※完全ローカル処理（画像は外部送信されません）</span>
+      <span>入力対応: JPEG / PNG ➔ 保存: メタデータ付与JPEG (Equirectangular)</span>
+      <span>※完全ローカル処理（外部送信なし）</span>
     </div>
   </div>
 
@@ -203,7 +204,7 @@
     let mode = 'clone';
     let editedFile = null;
     let originalFile = null;
-    let editedDimensions = { width: 0, height: 0 };
+    let editedImageEl = null;
 
     const editedDrop = document.getElementById('editedDrop');
     const originalDrop = document.getElementById('originalDrop');
@@ -233,7 +234,9 @@
 
     function setupDropZone(dropZone, input, onFileSelected) {
       dropZone.onclick = () => input.click();
-      input.onchange = (e) => onFileSelected(e.target.files[0]);
+      input.onchange = (e) => {
+        if (e.target.files.length) onFileSelected(e.target.files[0]);
+      };
       dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('dragover'); };
       dropZone.ondragleave = () => { dropZone.classList.remove('dragover'); };
       dropZone.ondrop = (e) => {
@@ -244,22 +247,28 @@
     }
 
     setupDropZone(editedDrop, editedInput, (file) => {
-      if (!file || !file.type.match(/image\/jpeg/)) return alert('⚠️ JPEG画像（.jpg / .jpeg）を選択してください！');
+      if (!file || !file.type.match(/image\/(jpeg|jpg|png)/)) {
+        alert('⚠️ JPEGまたはPNG画像を選択してください！');
+        return;
+      }
       editedFile = file;
       const el = document.getElementById('editedFileName');
-      el.textContent = `✓ ${file.name}`;
+      el.textContent = `✓ ${file.name} (${file.type.includes('png') ? 'PNG ➔ 自動変換' : 'JPEG'})`;
       el.style.display = 'inline-block';
       
       const img = new Image();
       img.onload = () => {
-        editedDimensions = { width: img.naturalWidth, height: img.naturalHeight };
+        editedImageEl = img;
         validateInputs();
       };
       img.src = URL.createObjectURL(file);
     });
 
     setupDropZone(originalDrop, originalInput, (file) => {
-      if (!file || !file.type.match(/image\/jpeg/)) return alert('⚠️ JPEG画像（.jpg / .jpeg）を選択してください！');
+      if (!file || !file.type.match(/image\/(jpeg|jpg)/)) {
+        alert('⚠️ 元画像はメタデータが含まれるJPEGファイル（.jpg / .jpeg）を選択してください！');
+        return;
+      }
       originalFile = file;
       const el = document.getElementById('originalFileName');
       el.textContent = `✓ ${file.name}`;
@@ -276,18 +285,40 @@
       }
     }
 
+    // PNG等の画像を最高画質(1.0)のJPEG ArrayBufferへ変換する関数
+    async function convertImageToJpegBuffer(img) {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+
+      return new Promise((resolve) => {
+        canvas.toBlob(async (blob) => {
+          const buffer = await blob.arrayBuffer();
+          resolve(buffer);
+        }, 'image/jpeg', 1.0); // 最高品質
+      });
+    }
+
     processBtn.onclick = async () => {
       statusDiv.style.color = 'var(--text)';
       statusDiv.textContent = '⏳ 処理中...';
       try {
-        const editedBuffer = await editedFile.arrayBuffer();
-        let resultBuffer;
+        let editedBuffer;
+        if (editedFile.type.includes('png')) {
+          statusDiv.textContent = '⏳ PNGを変換中...';
+          editedBuffer = await convertImageToJpegBuffer(editedImageEl);
+        } else {
+          editedBuffer = await editedFile.arrayBuffer();
+        }
 
+        let resultBuffer;
         if (mode === 'clone') {
           const originalBuffer = await originalFile.arrayBuffer();
           resultBuffer = copyAllMetadata(originalBuffer, editedBuffer);
         } else {
-          resultBuffer = injectGPanoXMP(editedBuffer, editedDimensions.width, editedDimensions.height);
+          resultBuffer = injectGPanoXMP(editedBuffer, editedImageEl.naturalWidth, editedImageEl.naturalHeight);
         }
 
         const blob = new Blob([resultBuffer], { type: 'image/jpeg' });
@@ -299,7 +330,7 @@
         URL.revokeObjectURL(url);
 
         statusDiv.style.color = '#059669';
-        statusDiv.textContent = '✅ 完了！360度パノラマ画像として保存されました 🎉';
+        statusDiv.textContent = '✅ 完了！360度パノラマ画像（JPEG）として保存されました 🎉';
       } catch (err) {
         console.error(err);
         statusDiv.style.color = '#dc2626';
@@ -307,7 +338,7 @@
       }
     };
 
-    // 全メタデータ（APPセグメント群）の完全コピー
+    // 元画像から全メタデータセグメント（APP0〜APP15）をコピーして結合
     function copyAllMetadata(srcJpg, dstJpg) {
       const srcBytes = new Uint8Array(srcJpg);
       const dstBytes = new Uint8Array(dstJpg);
@@ -317,7 +348,7 @@
       while (i < srcBytes.length - 1) {
         if (srcBytes[i] === 0xFF) {
           const marker = srcBytes[i + 1];
-          if (marker === 0xDA || marker === 0xD9) break; // SOS または EOI で終了
+          if (marker === 0xDA || marker === 0xD9) break; // SOS または EOI で停止
           if (marker >= 0xE0 && marker <= 0xFE) {
             const length = (srcBytes[i + 2] << 8) + srcBytes[i + 3];
             metadataSegments.push(srcBytes.slice(i, i + 2 + length));
