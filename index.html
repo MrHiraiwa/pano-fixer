@@ -647,7 +647,6 @@
             const length = (bytes[i + 2] << 8) + bytes[i + 3];
             const segment = bytes.subarray(i, i + 2 + length);
             
-            // APP0〜APP15, COM
             if ((marker >= 0xE0 && marker <= 0xEF) || marker === 0xFE) {
               appSegments.push(segment);
             } else {
@@ -700,10 +699,14 @@
 <?xpacket end="w"?>`;
 
       const encoder = new TextEncoder();
-      const namespace = "http://ns.adobe.com/xap/1.0/\0";
-      const payload = encoder.encode(namespace + xmpBody);
-      const app1Length = 2 + payload.length;
+      const namespaceBytes = encoder.encode("http://ns.adobe.com/xap/1.0/\0");
+      const bodyBytes = encoder.encode(xmpBody);
 
+      const payload = new Uint8Array(namespaceBytes.length + bodyBytes.length);
+      payload.set(namespaceBytes, 0);
+      payload.set(bodyBytes, namespaceBytes.length);
+
+      const app1Length = 2 + payload.length;
       const seg = new Uint8Array(2 + app1Length);
       seg[0] = 0xFF;
       seg[1] = 0xE1;
@@ -714,24 +717,61 @@
       return seg;
     }
 
-    // 既存セグメントの整理とGPano XMPの先頭差し替え
+    // Google/Photos用 必須Exif APP1 セグメントの生成
+    function createStandardExifSegment() {
+      // 最小限の有効なExif TIFF構造 (リトルエンディアン 'II', IFD0タグ: Make/Model/Orientation)
+      const exifHeader = new TextEncoder().encode("Exif\0\0");
+      const tiffData = new Uint8Array([
+        0x49, 0x49, 0x2A, 0x00, 0x08, 0x00, 0x00, 0x00, // TIFF Header (II, 42, offset 8)
+        0x01, 0x00,                                     // 1 directory entry
+        0x12, 0x01, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00, // Tag 0x0112 (Orientation), SHORT, 1
+        0x01, 0x00, 0x00, 0x00,                         // Value: 1 (Normal)
+        0x00, 0x00, 0x00, 0x00                          // Next IFD Offset (0)
+      ]);
+
+      const payload = new Uint8Array(exifHeader.length + tiffData.length);
+      payload.set(exifHeader, 0);
+      payload.set(tiffData, exifHeader.length);
+
+      const len = 2 + payload.length;
+      const seg = new Uint8Array(2 + len);
+      seg[0] = 0xFF; seg[1] = 0xE1;
+      seg[2] = (len >> 8) & 0xFF;
+      seg[3] = len & 0xFF;
+      seg.set(payload, 4);
+      return seg;
+    }
+
+    // メタデータの構築と順序保証 (Exif -> XMP -> その他)
     function buildMetadataSegments(existingAppSegments, width, height, heading) {
-      // 既存のXMP (http://ns.adobe.com/xap/1.0/) を除外
-      const filtered = existingAppSegments.filter(seg => {
+      let exifSegment = null;
+      const otherApps = [];
+
+      for (const seg of existingAppSegments) {
         if (seg[0] === 0xFF && seg[1] === 0xE1) {
           const header = new TextDecoder().decode(seg.subarray(4, 33));
+          if (header.startsWith("Exif\0\0")) {
+            exifSegment = seg;
+            continue;
+          }
           if (header.startsWith("http://ns.adobe.com/xap/1.0/")) {
-            return false;
+            // 既存の古いXMPは除外して新規上書き
+            continue;
           }
         }
-        return true;
-      });
+        otherApps.push(seg);
+      }
 
-      // 新しい完全準拠XMPセグメントを作成
-      const newXmpSeg = createOfficialGPanoSegment(width, height, heading);
+      // Exifが存在しない場合は標準Exifを生成
+      if (!exifSegment) {
+        exifSegment = createStandardExifSegment();
+      }
 
-      // JFIF/Exif等の先頭セグメントの直後に配置
-      return [newXmpSeg, ...filtered];
+      // 最新の完全準拠GPano XMP
+      const xmpSegment = createOfficialGPanoSegment(width, height, heading);
+
+      // JPEG規格推奨順序: Exif (APP1) -> XMP (APP1) -> その他
+      return [exifSegment, xmpSegment, ...otherApps];
     }
 
     processBtn.onclick = async () => {
@@ -759,7 +799,7 @@
           const srcParsed = parseJpegSegments(srcBytes);
           metadataSegments = buildMetadataSegments(srcParsed.appSegments, loadedImage.naturalWidth, loadedImage.naturalHeight, currentHeading);
         } else {
-          metadataSegments = [createOfficialGPanoSegment(loadedImage.naturalWidth, loadedImage.naturalHeight, currentHeading)];
+          metadataSegments = buildMetadataSegments([], loadedImage.naturalWidth, loadedImage.naturalHeight, currentHeading);
         }
 
         const metaLen = metadataSegments.reduce((sum, seg) => sum + seg.length, 0);
