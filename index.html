@@ -147,7 +147,6 @@
       border-radius: 8px;
     }
 
-    /* パノラマプレビュー＆コンパスルーラー */
     .preview-container {
       position: relative;
       width: 100%;
@@ -168,7 +167,6 @@
       height: 100%;
       display: block;
     }
-    /* センターマーカー */
     .center-line {
       position: absolute;
       top: 0;
@@ -195,7 +193,6 @@
       z-index: 10;
       letter-spacing: 0.5px;
     }
-    /* 方位ルーラー（上部） */
     .compass-bar {
       position: absolute;
       top: 0;
@@ -323,7 +320,6 @@
         <div class="heading-value" id="headingValText">0° (北)</div>
       </div>
 
-      <!-- パノラマビュー ＆ コンパス連動キャンバス -->
       <div class="preview-container" id="previewContainer">
         <canvas class="preview-canvas" id="previewCanvas"></canvas>
         <div class="compass-bar"></div>
@@ -349,7 +345,7 @@
 
     <div class="compatibility-note">
       <span>入力対応: JPEG / PNG ➔ 保存: メタデータ付与JPEG (Equirectangular)</span>
-      <span>※Google Maps / Google Photo Sphere 規格準拠</span>
+      <span>※Google Photo Sphere / Google Maps 規格完全準拠</span>
     </div>
   </div>
 
@@ -404,17 +400,14 @@
       updateHeadingUI(val);
     }
 
-    // プレビュー描画（画像 + 方位ルーラー）
     function drawPreview() {
       const w = previewCanvas.width = previewContainer.clientWidth * window.devicePixelRatio || 800;
       const h = previewCanvas.height = previewContainer.clientHeight * window.devicePixelRatio || 220;
       ctx.clearRect(0, 0, w, h);
 
       if (loadedImage) {
-        // 画像を描画
         ctx.drawImage(loadedImage, 0, 0, w, h);
       } else {
-        // 未読み込み時のプレースホルダー
         ctx.fillStyle = '#0f172a';
         ctx.fillRect(0, 0, w, h);
         ctx.fillStyle = '#64748b';
@@ -423,19 +416,13 @@
         ctx.fillText('画像をドロップするとここにパノラマプレビューが表示されます', w / 2, h / 2);
       }
 
-      // 上部コンパスルーラー描画
       drawCompassRuler(w, h);
     }
 
     function drawCompassRuler(w, h) {
       const dpr = window.devicePixelRatio || 1;
-      const rulerHeight = 36 * dpr;
-
       ctx.save();
-      // 目盛り線・テキストの描画
-      // 中央（w/2）が currentHeading
       for (let deg = 0; deg < 360; deg += 15) {
-        // 角度差 (-180 ~ +180)
         let diff = deg - currentHeading;
         while (diff > 180) diff -= 360;
         while (diff < -180) diff += 360;
@@ -470,7 +457,6 @@
       ctx.restore();
     }
 
-    // キャンバス上のドラッグ操作で方角調整
     let isDragging = false;
     let startX = 0;
     let startHeading = 0;
@@ -485,7 +471,6 @@
       if (!isDragging) return;
       const dx = e.clientX - startX;
       const width = previewContainer.clientWidth;
-      // ドラッグ移動量を角度に換算
       let newHeading = (startHeading - Math.round((dx / width) * 360)) % 360;
       if (newHeading < 0) newHeading += 360;
       updateHeadingUI(newHeading);
@@ -493,7 +478,6 @@
 
     window.addEventListener('mouseup', () => { isDragging = false; });
 
-    // タッチデバイス対応
     previewContainer.addEventListener('touchstart', (e) => {
       if (e.touches.length === 1) {
         isDragging = true;
@@ -643,7 +627,7 @@
     function parseJpegSegments(bytes) {
       const appSegments = [];
       const otherSegments = [];
-      let i = 2;
+      let i = 2; // 0xFFD8
 
       while (i < bytes.length - 1) {
         if (bytes[i] === 0xFF) {
@@ -663,6 +647,7 @@
             const length = (bytes[i + 2] << 8) + bytes[i + 3];
             const segment = bytes.subarray(i, i + 2 + length);
             
+            // APP0〜APP15, COM
             if ((marker >= 0xE0 && marker <= 0xEF) || marker === 0xFE) {
               appSegments.push(segment);
             } else {
@@ -681,42 +666,72 @@
     function extractHeadingDegrees(buffer) {
       const bytes = new Uint8Array(buffer);
       const str = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
-      const match = str.match(/GPano:PoseHeadingDegrees=["']?([0-9.]+)/i);
+      const match = str.match(/GPano:PoseHeadingDegrees=["'>]([0-9.]+)/i);
       return match ? parseFloat(match[1]) : null;
     }
 
-    function updateHeadingInSegments(appSegments, width, height, heading) {
-      let xmpFound = false;
-      const updatedSegments = appSegments.map(seg => {
+    // Google Photo Sphere 公式完全準拠 XMP APP1 セグメント生成
+    function createOfficialGPanoSegment(width, height, heading) {
+      const xmpBody = `<?xpacket begin="\uFEFF" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 5.1.0-jc003">
+  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+    <rdf:Description rdf:about=""
+      xmlns:GPano="http://ns.google.com/photos/1.0/panorama/">
+      <GPano:UsePanoramaViewer>True</GPano:UsePanoramaViewer>
+      <GPano:CaptureSoftware>Photo Sphere</GPano:CaptureSoftware>
+      <GPano:StitchingSoftware>Photo Sphere</GPano:StitchingSoftware>
+      <GPano:ProjectionType>equirectangular</GPano:ProjectionType>
+      <GPano:PoseHeadingDegrees>${heading.toFixed(1)}</GPano:PoseHeadingDegrees>
+      <GPano:PosePitchDegrees>0.0</GPano:PosePitchDegrees>
+      <GPano:PoseRollDegrees>0.0</GPano:PoseRollDegrees>
+      <GPano:InitialViewHeadingDegrees>${heading.toFixed(1)}</GPano:InitialViewHeadingDegrees>
+      <GPano:InitialViewPitchDegrees>0.0</GPano:InitialViewPitchDegrees>
+      <GPano:InitialViewRollDegrees>0.0</GPano:InitialViewRollDegrees>
+      <GPano:InitialHorizontalFOVDegrees>90.0</GPano:InitialHorizontalFOVDegrees>
+      <GPano:CroppedAreaLeftPixels>0</GPano:CroppedAreaLeftPixels>
+      <GPano:CroppedAreaTopPixels>0</GPano:CroppedAreaTopPixels>
+      <GPano:CroppedAreaImageWidthPixels>${width}</GPano:CroppedAreaImageWidthPixels>
+      <GPano:CroppedAreaImageHeightPixels>${height}</GPano:CroppedAreaImageHeightPixels>
+      <GPano:FullPanoWidthPixels>${width}</GPano:FullPanoWidthPixels>
+      <GPano:FullPanoHeightPixels>${height}</GPano:FullPanoHeightPixels>
+    </rdf:Description>
+  </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>`;
+
+      const encoder = new TextEncoder();
+      const namespace = "http://ns.adobe.com/xap/1.0/\0";
+      const payload = encoder.encode(namespace + xmpBody);
+      const app1Length = 2 + payload.length;
+
+      const seg = new Uint8Array(2 + app1Length);
+      seg[0] = 0xFF;
+      seg[1] = 0xE1;
+      seg[2] = (app1Length >> 8) & 0xFF;
+      seg[3] = app1Length & 0xFF;
+      seg.set(payload, 4);
+
+      return seg;
+    }
+
+    // 既存セグメントの整理とGPano XMPの先頭差し替え
+    function buildMetadataSegments(existingAppSegments, width, height, heading) {
+      // 既存のXMP (http://ns.adobe.com/xap/1.0/) を除外
+      const filtered = existingAppSegments.filter(seg => {
         if (seg[0] === 0xFF && seg[1] === 0xE1) {
           const header = new TextDecoder().decode(seg.subarray(4, 33));
           if (header.startsWith("http://ns.adobe.com/xap/1.0/")) {
-            xmpFound = true;
-            let xmpStr = new TextDecoder('utf-8').decode(seg.subarray(33));
-            if (/GPano:PoseHeadingDegrees/i.test(xmpStr)) {
-              xmpStr = xmpStr.replace(/GPano:PoseHeadingDegrees="[^"]*"/gi, `GPano:PoseHeadingDegrees="${heading.toFixed(1)}"`);
-              xmpStr = xmpStr.replace(/<GPano:PoseHeadingDegrees>[^<]*<\/GPano:PoseHeadingDegrees>/gi, `<GPano:PoseHeadingDegrees>${heading.toFixed(1)}</GPano:PoseHeadingDegrees>`);
-            } else {
-              xmpStr = xmpStr.replace(/<rdf:Description\b([^>]*)>/i, `<rdf:Description$1 GPano:PoseHeadingDegrees="${heading.toFixed(1)}">`);
-            }
-            const encoder = new TextEncoder();
-            const payload = encoder.encode("http://ns.adobe.com/xap/1.0/\0" + xmpStr);
-            const len = 2 + payload.length;
-            const newSeg = new Uint8Array(2 + len);
-            newSeg[0] = 0xFF; newSeg[1] = 0xE1;
-            newSeg[2] = (len >> 8) & 0xFF;
-            newSeg[3] = len & 0xFF;
-            newSeg.set(payload, 4);
-            return newSeg;
+            return false;
           }
         }
-        return seg;
+        return true;
       });
 
-      if (!xmpFound) {
-        updatedSegments.push(createGPanoXmpSegment(width, height, heading));
-      }
-      return updatedSegments;
+      // 新しい完全準拠XMPセグメントを作成
+      const newXmpSeg = createOfficialGPanoSegment(width, height, heading);
+
+      // JFIF/Exif等の先頭セグメントの直後に配置
+      return [newXmpSeg, ...filtered];
     }
 
     processBtn.onclick = async () => {
@@ -737,21 +752,21 @@
         let metadataSegments = [];
 
         if (mode === 'heading_only') {
-          metadataSegments = updateHeadingInSegments(dstParsed.appSegments, loadedImage.naturalWidth, loadedImage.naturalHeight, currentHeading);
+          metadataSegments = buildMetadataSegments(dstParsed.appSegments, loadedImage.naturalWidth, loadedImage.naturalHeight, currentHeading);
         } else if (mode === 'clone') {
           const originalBuffer = await originalFile.arrayBuffer();
           const srcBytes = new Uint8Array(originalBuffer);
           const srcParsed = parseJpegSegments(srcBytes);
-          metadataSegments = updateHeadingInSegments(srcParsed.appSegments, loadedImage.naturalWidth, loadedImage.naturalHeight, currentHeading);
+          metadataSegments = buildMetadataSegments(srcParsed.appSegments, loadedImage.naturalWidth, loadedImage.naturalHeight, currentHeading);
         } else {
-          metadataSegments = [createGPanoXmpSegment(loadedImage.naturalWidth, loadedImage.naturalHeight, currentHeading)];
+          metadataSegments = [createOfficialGPanoSegment(loadedImage.naturalWidth, loadedImage.naturalHeight, currentHeading)];
         }
 
         const metaLen = metadataSegments.reduce((sum, seg) => sum + seg.length, 0);
         const bodyLen = dstParsed.otherSegments.reduce((sum, seg) => sum + seg.length, 0);
 
         const out = new Uint8Array(2 + metaLen + bodyLen);
-        out.set([0xFF, 0xD8], 0);
+        out.set([0xFF, 0xD8], 0); // SOI
 
         let offset = 2;
         for (const seg of metadataSegments) {
@@ -772,7 +787,7 @@
         URL.revokeObjectURL(url);
 
         statusDiv.style.color = '#059669';
-        statusDiv.textContent = `✅ 完了！方角（${currentHeading}°）を設定して保存しました 🎉`;
+        statusDiv.textContent = `✅ 完了！完全準拠メタデータ（${currentHeading}°）を付与して保存しました 🎉`;
       } catch (err) {
         console.error(err);
         statusDiv.style.color = '#dc2626';
@@ -780,40 +795,6 @@
       }
     };
 
-    function createGPanoXmpSegment(width, height, heading) {
-      const xmpString = `<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 5.1.0-jc003">
-  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
-    <rdf:Description rdf:about=""
-      xmlns:GPano="http://ns.google.com/photos/1.0/panorama/">
-      <GPano:UsePanoramaViewer>True</GPano:UsePanoramaViewer>
-      <GPano:ProjectionType>equirectangular</GPano:ProjectionType>
-      <GPano:PoseHeadingDegrees>${heading.toFixed(1)}</GPano:PoseHeadingDegrees>
-      <GPano:FullPanoWidthPixels>${width}</GPano:FullPanoWidthPixels>
-      <GPano:FullPanoHeightPixels>${height}</GPano:FullPanoHeightPixels>
-      <GPano:CroppedAreaImageWidthPixels>${width}</GPano:CroppedAreaImageWidthPixels>
-      <GPano:CroppedAreaImageHeightPixels>${height}</GPano:CroppedAreaImageHeightPixels>
-      <GPano:CroppedAreaLeftPixels>0</GPano:CroppedAreaLeftPixels>
-      <GPano:CroppedAreaTopPixels>0</GPano:CroppedAreaTopPixels>
-    </rdf:Description>
-  </rdf:RDF>
-</x:xmpmeta>`;
-
-      const encoder = new TextEncoder();
-      const namespace = "http://ns.adobe.com/xap/1.0/\0";
-      const xmpBytes = encoder.encode(namespace + xmpString);
-      const app1Length = 2 + xmpBytes.length;
-
-      const seg = new Uint8Array(2 + app1Length);
-      seg[0] = 0xFF;
-      seg[1] = 0xE1;
-      seg[2] = (app1Length >> 8) & 0xFF;
-      seg[3] = app1Length & 0xFF;
-      seg.set(xmpBytes, 4);
-
-      return seg;
-    }
-
-    // 初期プレビュー描画
     drawPreview();
   </script>
 </body>
