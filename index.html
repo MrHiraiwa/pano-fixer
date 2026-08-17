@@ -285,7 +285,7 @@
       }
     }
 
-    // PNG等の画像を最高画質(1.0)のJPEG ArrayBufferへ変換する関数
+    // PNG等の画像を最高画質(1.0)のJPEG ArrayBufferへ変換
     async function convertImageToJpegBuffer(img) {
       const canvas = document.createElement('canvas');
       canvas.width = img.naturalWidth;
@@ -297,8 +297,52 @@
         canvas.toBlob(async (blob) => {
           const buffer = await blob.arrayBuffer();
           resolve(buffer);
-        }, 'image/jpeg', 1.0); // 最高品質
+        }, 'image/jpeg', 1.0);
       });
+    }
+
+    // JPEGセグメントを安全に分割するパーサー
+    function parseJpegSegments(bytes) {
+      const appSegments = [];
+      const otherSegments = [];
+      let i = 2; // 0xFFD8 (SOI) をスキップ
+
+      while (i < bytes.length - 1) {
+        if (bytes[i] === 0xFF) {
+          const marker = bytes[i + 1];
+          // SOS (Scan Data開始) または 不明マーカーで停止し残りを全て画像データとして扱う
+          if (marker === 0xDA || marker === 0xD9 || marker === 0x00) {
+            otherSegments.push(bytes.subarray(i));
+            break;
+          }
+
+          // スタンドアロンマーカー (RSTm, TEM など)
+          if ((marker >= 0xD0 && marker <= 0xD7) || marker === 0x01) {
+            otherSegments.push(bytes.subarray(i, i + 2));
+            i += 2;
+            continue;
+          }
+
+          // 長さフィールドを持つ標準セグメント
+          if (i + 3 < bytes.length) {
+            const length = (bytes[i + 2] << 8) + bytes[i + 3];
+            const segment = bytes.subarray(i, i + 2 + length);
+            
+            // APP0〜APP15, COM (メタデータ系)
+            if ((marker >= 0xE0 && marker <= 0xEF) || marker === 0xFE) {
+              appSegments.push(segment);
+            } else {
+              // DQT, DHT, SOF, DRI など画像描画に必須なセグメント
+              otherSegments.push(segment);
+            }
+            i += 2 + length;
+            continue;
+          }
+        }
+        i++;
+      }
+
+      return { appSegments, otherSegments };
     }
 
     processBtn.onclick = async () => {
@@ -313,15 +357,38 @@
           editedBuffer = await editedFile.arrayBuffer();
         }
 
-        let resultBuffer;
+        const dstBytes = new Uint8Array(editedBuffer);
+        const dstParsed = parseJpegSegments(dstBytes);
+
+        let metadataSegments = [];
+
         if (mode === 'clone') {
           const originalBuffer = await originalFile.arrayBuffer();
-          resultBuffer = copyAllMetadata(originalBuffer, editedBuffer);
+          const srcBytes = new Uint8Array(originalBuffer);
+          const srcParsed = parseJpegSegments(srcBytes);
+          metadataSegments = srcParsed.appSegments;
         } else {
-          resultBuffer = injectGPanoXMP(editedBuffer, editedImageEl.naturalWidth, editedImageEl.naturalHeight);
+          metadataSegments = [createGPanoXmpSegment(editedImageEl.naturalWidth, editedImageEl.naturalHeight)];
         }
 
-        const blob = new Blob([resultBuffer], { type: 'image/jpeg' });
+        // SOI (0xFFD8) + メタデータセグメント + 編集後画像の画像構成セグメント(DQT/DHT/SOF/SOS)
+        const metaLen = metadataSegments.reduce((sum, seg) => sum + seg.length, 0);
+        const bodyLen = dstParsed.otherSegments.reduce((sum, seg) => sum + seg.length, 0);
+
+        const out = new Uint8Array(2 + metaLen + bodyLen);
+        out.set([0xFF, 0xD8], 0); // SOI
+
+        let offset = 2;
+        for (const seg of metadataSegments) {
+          out.set(seg, offset);
+          offset += seg.length;
+        }
+        for (const seg of dstParsed.otherSegments) {
+          out.set(seg, offset);
+          offset += seg.length;
+        }
+
+        const blob = new Blob([out.buffer], { type: 'image/jpeg' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -338,58 +405,8 @@
       }
     };
 
-    // 元画像から全メタデータセグメント（APP0〜APP15）をコピーして結合
-    function copyAllMetadata(srcJpg, dstJpg) {
-      const srcBytes = new Uint8Array(srcJpg);
-      const dstBytes = new Uint8Array(dstJpg);
-
-      const metadataSegments = [];
-      let i = 2; // SOI (0xFFD8) スキップ
-      while (i < srcBytes.length - 1) {
-        if (srcBytes[i] === 0xFF) {
-          const marker = srcBytes[i + 1];
-          if (marker === 0xDA || marker === 0xD9) break; // SOS または EOI で停止
-          if (marker >= 0xE0 && marker <= 0xFE) {
-            const length = (srcBytes[i + 2] << 8) + srcBytes[i + 3];
-            metadataSegments.push(srcBytes.slice(i, i + 2 + length));
-            i += 2 + length;
-            continue;
-          }
-        }
-        i++;
-      }
-
-      let dstSOS = 2;
-      let j = 2;
-      while (j < dstBytes.length - 1) {
-        if (dstBytes[j] === 0xFF && dstBytes[j + 1] === 0xDA) {
-          dstSOS = j;
-          break;
-        } else if (dstBytes[j] === 0xFF && (dstBytes[j + 1] >= 0xE0 && dstBytes[j + 1] <= 0xFE)) {
-          const len = (dstBytes[j + 2] << 8) + dstBytes[j + 3];
-          j += 2 + len;
-          continue;
-        }
-        j++;
-      }
-
-      const totalMetaLen = metadataSegments.reduce((sum, seg) => sum + seg.length, 0);
-      const dstBody = dstBytes.subarray(dstSOS);
-      const out = new Uint8Array(2 + totalMetaLen + dstBody.length);
-
-      out.set([0xFF, 0xD8], 0);
-      let offset = 2;
-      for (const seg of metadataSegments) {
-        out.set(seg, offset);
-        offset += seg.length;
-      }
-      out.set(dstBody, offset);
-
-      return out.buffer;
-    }
-
-    // Google Photo Sphere (GPano) 準拠の標準XMP生成
-    function injectGPanoXMP(jpegBuffer, width, height) {
+    // Google Photo Sphere (GPano) 準拠の標準XMP APP1セグメント生成
+    function createGPanoXmpSegment(width, height) {
       const xmpString = `<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 5.1.0-jc003">
   <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
     <rdf:Description rdf:about=""
@@ -411,20 +428,14 @@
       const xmpBytes = encoder.encode(namespace + xmpString);
       const app1Length = 2 + xmpBytes.length;
 
-      const app1Header = new Uint8Array(4);
-      app1Header[0] = 0xFF;
-      app1Header[1] = 0xE1;
-      app1Header[2] = (app1Length >> 8) & 0xFF;
-      app1Header[3] = app1Length & 0xFF;
+      const seg = new Uint8Array(2 + app1Length);
+      seg[0] = 0xFF;
+      seg[1] = 0xE1;
+      seg[2] = (app1Length >> 8) & 0xFF;
+      seg[3] = app1Length & 0xFF;
+      seg.set(xmpBytes, 4);
 
-      const srcBytes = new Uint8Array(jpegBuffer);
-      const out = new Uint8Array(srcBytes.length + app1Header.length + xmpBytes.length);
-      out.set(srcBytes.subarray(0, 2), 0);
-      out.set(app1Header, 2);
-      out.set(xmpBytes, 6);
-      out.set(srcBytes.subarray(2), 6 + xmpBytes.length);
-
-      return out.buffer;
+      return seg;
     }
   </script>
 </body>
