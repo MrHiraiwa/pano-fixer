@@ -21,7 +21,7 @@
     }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      max-width: 720px;
+      max-width: 760px;
       margin: 40px auto;
       padding: 0 20px;
       background-color: var(--bg);
@@ -50,8 +50,8 @@
     }
     .mode-selector {
       display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
       margin-bottom: 24px;
       background: #f1f5f9;
       padding: 6px;
@@ -61,11 +61,11 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
-      padding: 10px 14px;
+      text-align: center;
+      padding: 10px 8px;
       border-radius: 8px;
       cursor: pointer;
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 600;
       color: var(--text-muted);
       transition: all 0.2s ease;
@@ -92,7 +92,7 @@
       text-align: center;
       background: #fafafa;
       cursor: pointer;
-      min-height: 150px;
+      min-height: 140px;
       display: flex;
       flex-direction: column;
       justify-content: center;
@@ -215,34 +215,40 @@
 <body>
 
   <div class="card">
-    <h1>🌐 360°パノラマ メタデータ復元・方角調整 🧭</h1>
-    <div class="description">
-      AI編集で消えたパノラマメタデータの復元に加え、Google Maps / ストリートビュー用の方角（画像中央が向いている方位）を調整できます。
+    <h1>🌐 360°パノラマ ツール ✨</h1>
+    <div class="description" id="modeDescription">
+      画像中央が向いている方角（Google Maps / ストリートビュー用）を調整します。
     </div>
 
-    <!-- モード選択タブ -->
+    <!-- モード選択タブ（3モード） -->
     <div class="mode-selector">
-      <label class="mode-tab active" id="tabClone">
-        <input type="radio" name="mode" value="clone" checked onchange="switchMode()">
-        🔄 元ファイルから移植
+      <label class="mode-tab active" id="tabHeading">
+        <input type="radio" name="mode" value="heading_only" checked onchange="switchMode()">
+        🧭 方角だけ調整
+      </label>
+      <label class="mode-tab" id="tabClone">
+        <input type="radio" name="mode" value="clone" onchange="switchMode()">
+        🔄 元画像からタグ移植
       </label>
       <label class="mode-tab" id="tabGenerate">
         <input type="radio" name="mode" value="generate" onchange="switchMode()">
-        ⚙️ 360°タグを新規生成
+        ⚙️ 新規360°タグ生成
       </label>
     </div>
 
     <!-- ドロップエリア -->
-    <div class="drop-grid" id="dropGrid">
+    <div class="drop-grid single" id="dropGrid">
+      <!-- メイン画像（方角調整用 / 編集後画像） -->
       <div class="drop-zone" id="editedDrop">
-        <div class="drop-icon">🎨</div>
-        <div class="drop-title">編集後の画像</div>
-        <div class="drop-sub">JPEG または PNG (自動変換)</div>
+        <div class="drop-icon" id="primaryDropIcon">🧭</div>
+        <div class="drop-title" id="primaryDropTitle">対象の360度画像 (JPEG / PNG)</div>
+        <div class="drop-sub" id="primaryDropSub">方角を調整したいパノラマ画像</div>
         <div class="file-name" id="editedFileName" style="display: none;"></div>
         <input type="file" id="editedInput" accept="image/jpeg,image/jpg,image/png" style="display: none;">
       </div>
 
-      <div class="drop-zone" id="originalDrop">
+      <!-- 撮影元画像（クローンモード時のみ表示） -->
+      <div class="drop-zone" id="originalDrop" style="display: none;">
         <div class="drop-icon">📷</div>
         <div class="drop-title">加工前の元画像 (JPEG)</div>
         <div class="drop-sub">撮影機器から直接取り出した元ファイル</div>
@@ -252,7 +258,7 @@
     </div>
 
     <!-- 方角（Heading）調整コントロール -->
-    <div class="heading-panel">
+    <div class="heading-panel" id="headingPanel">
       <div class="heading-header">
         <div class="heading-title">🧭 画像中央が向いている方角 (Heading)</div>
         <div class="heading-value" id="headingValText">0° (北)</div>
@@ -270,7 +276,7 @@
       </div>
     </div>
 
-    <button id="processBtn" class="primary-btn" disabled>メタデータを付与・調整して保存 💾</button>
+    <button id="processBtn" class="primary-btn" disabled>方角を更新して保存 💾</button>
     <div id="status"></div>
 
     <div class="compatibility-note">
@@ -280,7 +286,7 @@
   </div>
 
   <script>
-    let mode = 'clone';
+    let mode = 'heading_only';
     let editedFile = null;
     let originalFile = null;
     let editedImageEl = null;
@@ -293,8 +299,15 @@
     const processBtn = document.getElementById('processBtn');
     const statusDiv = document.getElementById('status');
     const dropGrid = document.getElementById('dropGrid');
+    
+    const tabHeading = document.getElementById('tabHeading');
     const tabClone = document.getElementById('tabClone');
     const tabGenerate = document.getElementById('tabGenerate');
+    const modeDescription = document.getElementById('modeDescription');
+    const primaryDropIcon = document.getElementById('primaryDropIcon');
+    const primaryDropTitle = document.getElementById('primaryDropTitle');
+    const primaryDropSub = document.getElementById('primaryDropSub');
+
     const headingSlider = document.getElementById('headingSlider');
     const headingValText = document.getElementById('headingValText');
 
@@ -321,16 +334,35 @@
 
     function switchMode() {
       mode = document.querySelector('input[name="mode"]:checked').value;
-      if (mode === 'generate') {
-        tabGenerate.classList.add('active');
-        tabClone.classList.remove('active');
+      [tabHeading, tabClone, tabGenerate].forEach(t => t.classList.remove('active'));
+
+      if (mode === 'heading_only') {
+        tabHeading.classList.add('active');
+        modeDescription.textContent = '画像中央が向いている方角（Google Maps / ストリートビュー用）を調整します。';
+        primaryDropIcon.textContent = '🧭';
+        primaryDropTitle.textContent = '対象の360度画像 (JPEG / PNG)';
+        primaryDropSub.textContent = '方角を調整したいパノラマ画像（1枚）';
         originalDrop.style.display = 'none';
         dropGrid.classList.add('single');
-      } else {
+        processBtn.textContent = '方角を更新して保存 💾';
+      } else if (mode === 'clone') {
         tabClone.classList.add('active');
-        tabGenerate.classList.remove('active');
+        modeDescription.textContent = 'AI編集で消えたメタデータを元画像から完全復元・移植します（方角調整も可能）。';
+        primaryDropIcon.textContent = '🎨';
+        primaryDropTitle.textContent = '編集後の画像 (JPEG / PNG)';
+        primaryDropSub.textContent = 'AI加工などでタグが消えたファイル';
         originalDrop.style.display = 'flex';
         dropGrid.classList.remove('single');
+        processBtn.textContent = 'メタデータを移植・調整して保存 💾';
+      } else {
+        tabGenerate.classList.add('active');
+        modeDescription.textContent = '元画像がない場合に、標準の360度パノラマタグ（GPano）を新規注入します。';
+        primaryDropIcon.textContent = '🎨';
+        primaryDropTitle.textContent = '対象のパノラマ画像 (JPEG / PNG)';
+        primaryDropSub.textContent = '360°タグを新規作成する画像（1枚）';
+        originalDrop.style.display = 'none';
+        dropGrid.classList.add('single');
+        processBtn.textContent = '360°タグを付与して保存 💾';
       }
       validateInputs();
     }
@@ -349,7 +381,7 @@
       };
     }
 
-    setupDropZone(editedDrop, editedInput, (file) => {
+    setupDropZone(editedDrop, editedInput, async (file) => {
       if (!file || !file.type.match(/image\/(jpeg|jpg|png)/)) {
         alert('⚠️ JPEGまたはPNG画像を選択してください！');
         return;
@@ -365,6 +397,19 @@
         validateInputs();
       };
       img.src = URL.createObjectURL(file);
+
+      // 方角調整モード時はドロップ画像から既存方角を自動取得
+      if (mode === 'heading_only' && !file.type.includes('png')) {
+        try {
+          const buf = await file.arrayBuffer();
+          const existingHeading = extractHeadingDegrees(buf);
+          if (existingHeading !== null) {
+            setHeading(Math.round(existingHeading));
+          }
+        } catch (e) {
+          console.warn('Heading extraction error', e);
+        }
+      }
     });
 
     setupDropZone(originalDrop, originalInput, async (file) => {
@@ -377,7 +422,6 @@
       el.textContent = `✓ ${file.name}`;
       el.style.display = 'inline-block';
 
-      // 元画像から既存のPoseHeadingDegreesを抽出してスライダーに自動反映
       try {
         const buf = await file.arrayBuffer();
         const existingHeading = extractHeadingDegrees(buf);
@@ -453,7 +497,6 @@
       return { appSegments, otherSegments };
     }
 
-    // XMPからPoseHeadingDegreesを検出
     function extractHeadingDegrees(buffer) {
       const bytes = new Uint8Array(buffer);
       const str = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
@@ -461,7 +504,6 @@
       return match ? parseFloat(match[1]) : null;
     }
 
-    // 移植モード時：既存XMP内のPoseHeadingDegreesを上書き（または注入）
     function updateHeadingInSegments(appSegments, width, height, heading) {
       let xmpFound = false;
       const updatedSegments = appSegments.map(seg => {
@@ -513,7 +555,9 @@
 
         let metadataSegments = [];
 
-        if (mode === 'clone') {
+        if (mode === 'heading_only') {
+          metadataSegments = updateHeadingInSegments(dstParsed.appSegments, editedImageEl.naturalWidth, editedImageEl.naturalHeight, currentHeading);
+        } else if (mode === 'clone') {
           const originalBuffer = await originalFile.arrayBuffer();
           const srcBytes = new Uint8Array(originalBuffer);
           const srcParsed = parseJpegSegments(srcBytes);
@@ -542,7 +586,7 @@
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = editedFile.name.replace(/\.[^/.]+$/, "") + `_heading${currentHeading}_360fixed.jpg`;
+        a.download = editedFile.name.replace(/\.[^/.]+$/, "") + `_heading${currentHeading}_360.jpg`;
         a.click();
         URL.revokeObjectURL(url);
 
@@ -555,7 +599,6 @@
       }
     };
 
-    // Google Photo Sphere (GPano) 準拠の標準XMP生成（PoseHeadingDegrees を付与）
     function createGPanoXmpSegment(width, height, heading) {
       const xmpString = `<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 5.1.0-jc003">
   <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
