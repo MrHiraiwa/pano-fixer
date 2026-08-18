@@ -1,13 +1,13 @@
 <!--
   360-degree Image Metadata Injector, Cloner, Heading & GPS Adjuster (pano-fixer)
-  Copyright (c) 2026 MrHiraiwa
+  Copyright (c) 2026 Masatoshi Hiraiwa
   SPDX-License-Identifier: MIT
 -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>360°パノラマ画像 メタデータ復元・方角＆位置情報ツール 🌐🧭📍</title>
   
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -26,8 +26,8 @@
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       max-width: 820px;
-      margin: 40px auto;
-      padding: 0 20px;
+      margin: 20px auto;
+      padding: 0 16px;
       background-color: var(--bg);
       color: var(--text);
       line-height: 1.6;
@@ -35,12 +35,12 @@
     .card {
       background: var(--card-bg);
       border-radius: 16px;
-      padding: 32px;
+      padding: 24px;
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
       border: 1px solid var(--border);
     }
     h1 {
-      font-size: 24px;
+      font-size: 22px;
       margin: 0 0 8px 0;
       color: var(--text);
       display: flex;
@@ -49,14 +49,14 @@
     }
     .description {
       color: var(--text-muted);
-      margin-bottom: 24px;
-      font-size: 14px;
+      margin-bottom: 20px;
+      font-size: 13px;
     }
     .mode-selector {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
-      margin-bottom: 24px;
+      gap: 6px;
+      margin-bottom: 20px;
       background: #f1f5f9;
       padding: 6px;
       border-radius: 12px;
@@ -66,10 +66,10 @@
       align-items: center;
       justify-content: center;
       text-align: center;
-      padding: 10px 8px;
+      padding: 10px 4px;
       border-radius: 8px;
       cursor: pointer;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 600;
       color: var(--text-muted);
       transition: all 0.2s ease;
@@ -83,8 +83,8 @@
     .drop-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 16px;
-      margin-bottom: 24px;
+      gap: 12px;
+      margin-bottom: 20px;
     }
     .drop-grid.single {
       grid-template-columns: 1fr;
@@ -92,11 +92,11 @@
     .drop-zone {
       border: 2px dashed var(--border);
       border-radius: 12px;
-      padding: 24px 16px;
+      padding: 20px 12px;
       text-align: center;
       background: #fafafa;
       cursor: pointer;
-      min-height: 140px;
+      min-height: 120px;
       display: flex;
       flex-direction: column;
       justify-content: center;
@@ -107,12 +107,12 @@
       border-color: var(--primary);
       background: #eff6ff;
     }
-    .drop-icon { font-size: 28px; margin-bottom: 8px; }
-    .drop-title { font-weight: 600; font-size: 15px; margin-bottom: 4px; }
-    .drop-sub { font-size: 12px; color: var(--text-muted); }
+    .drop-icon { font-size: 26px; margin-bottom: 6px; }
+    .drop-title { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
+    .drop-sub { font-size: 11px; color: var(--text-muted); }
     .file-name {
-      margin-top: 10px;
-      font-size: 12px;
+      margin-top: 8px;
+      font-size: 11px;
       font-weight: bold;
       color: #059669;
       background: #ecfdf5;
@@ -125,39 +125,39 @@
       background: #f8fafc;
       border: 1px solid var(--border);
       border-radius: 12px;
-      padding: 20px;
-      margin-bottom: 24px;
+      padding: 16px;
+      margin-bottom: 20px;
     }
     .panel-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
     }
     .panel-title {
-      font-size: 15px;
+      font-size: 14px;
       font-weight: bold;
       display: flex;
       align-items: center;
       gap: 6px;
     }
     .badge-val {
-      font-size: 14px;
+      font-size: 13px;
       font-weight: bold;
       color: var(--primary);
       background: #eff6ff;
-      padding: 3px 10px;
-      border-radius: 8px;
+      padding: 2px 8px;
+      border-radius: 6px;
     }
 
     .preview-container {
       position: relative;
       width: 100%;
-      height: 200px;
+      height: 180px;
       background: #1e293b;
       border-radius: 10px;
       overflow: hidden;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
       cursor: grab;
       user-select: none;
       box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);
@@ -175,13 +175,13 @@
     }
     .center-label {
       position: absolute;
-      bottom: 8px; left: 50%;
+      bottom: 6px; left: 50%;
       transform: translateX(-50%);
       background: rgba(239, 68, 68, 0.9);
       color: #fff;
-      font-size: 11px;
+      font-size: 10px;
       font-weight: bold;
-      padding: 2px 8px;
+      padding: 2px 6px;
       border-radius: 4px;
       pointer-events: none;
       z-index: 10;
@@ -189,21 +189,21 @@
     .compass-bar {
       position: absolute;
       top: 0; left: 0;
-      width: 100%; height: 32px;
+      width: 100%; height: 30px;
       background: linear-gradient(180deg, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0) 100%);
       pointer-events: none;
       z-index: 10;
     }
-    .slider-row { display: flex; align-items: center; gap: 12px; }
+    .slider-row { display: flex; align-items: center; gap: 10px; }
     .slider-row input[type="range"] { flex: 1; accent-color: var(--primary); cursor: pointer; }
-    .preset-buttons { display: flex; gap: 8px; margin-top: 12px; }
+    .preset-buttons { display: flex; gap: 6px; margin-top: 10px; }
     .preset-btn {
       background: #fff;
       border: 1px solid var(--border);
       color: var(--text);
-      padding: 6px 12px;
+      padding: 6px 8px;
       border-radius: 6px;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 600;
       cursor: pointer;
       flex: 1;
@@ -213,34 +213,34 @@
 
     #map {
       width: 100%;
-      height: 220px;
+      height: 200px;
       border-radius: 10px;
       border: 1px solid var(--border);
-      margin-top: 10px;
+      margin-top: 8px;
       z-index: 1;
     }
     .gps-inputs {
       display: grid;
       grid-template-columns: 1fr 1fr auto;
-      gap: 10px;
-      margin-top: 12px;
+      gap: 8px;
+      margin-top: 10px;
       align-items: center;
     }
-    .gps-field { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+    .gps-field { display: flex; align-items: center; gap: 4px; font-size: 12px; }
     .gps-field input {
       width: 100%;
-      padding: 6px 10px;
+      padding: 6px 8px;
       border: 1px solid var(--border);
       border-radius: 6px;
-      font-size: 13px;
+      font-size: 12px;
     }
     .clear-gps-btn {
-      padding: 6px 12px;
+      padding: 6px 10px;
       background: #fee2e2;
       color: #dc2626;
       border: 1px solid #fca5a5;
       border-radius: 6px;
-      font-size: 12px;
+      font-size: 11px;
       font-weight: bold;
       cursor: pointer;
     }
@@ -249,9 +249,9 @@
       background: var(--primary);
       color: white;
       border: none;
-      padding: 14px;
+      padding: 12px;
       border-radius: 10px;
-      font-size: 16px;
+      font-size: 15px;
       font-weight: 600;
       cursor: pointer;
       width: 100%;
@@ -260,22 +260,22 @@
     button.primary-btn:hover:not(:disabled) { background: var(--primary-hover); }
     button.primary-btn:disabled { background: #94a3b8; cursor: not-allowed; }
     #status {
-      margin-top: 16px;
-      font-size: 14px;
+      margin-top: 12px;
+      font-size: 13px;
       font-weight: 600;
       text-align: center;
-      min-height: 22px;
+      min-height: 20px;
     }
     .compatibility-note {
-      margin-top: 24px;
-      padding-top: 16px;
+      margin-top: 20px;
+      padding-top: 14px;
       border-top: 1px solid var(--border);
-      font-size: 12px;
+      font-size: 11px;
       color: var(--text-muted);
       display: flex;
       justify-content: space-between;
       flex-wrap: wrap;
-      gap: 8px;
+      gap: 6px;
     }
   </style>
 </head>
@@ -306,9 +306,8 @@
       <div class="drop-zone" id="editedDrop">
         <div class="drop-icon" id="primaryDropIcon">🧭</div>
         <div class="drop-title" id="primaryDropTitle">対象の360度画像 (JPEG / PNG)</div>
-        <div class="drop-sub" id="primaryDropSub">ドラッグ＆ドロップまたはタップで選択</div>
+        <div class="drop-sub" id="primaryDropSub">クリックまたはドラッグ＆ドロップで選択</div>
         <div class="file-name" id="editedFileName" style="display: none;"></div>
-        <!-- acceptを外してPixelのPhoto PickerによるGPS削除を回避 -->
         <input type="file" id="editedInput" style="display: none;">
       </div>
 
@@ -336,9 +335,9 @@
       </div>
 
       <div class="slider-row">
-        <span style="font-size:12px; color:var(--text-muted); font-weight: bold;">0°</span>
+        <span style="font-size:11px; color:var(--text-muted); font-weight: bold;">0°</span>
         <input type="range" id="headingSlider" min="0" max="359" value="0" step="1" oninput="updateHeadingUI(this.value)">
-        <span style="font-size:12px; color:var(--text-muted); font-weight: bold;">359°</span>
+        <span style="font-size:11px; color:var(--text-muted); font-weight: bold;">359°</span>
       </div>
       <div class="preset-buttons">
         <button type="button" class="preset-btn" onclick="setHeading(0)">北 (0°)</button>
@@ -354,7 +353,7 @@
         <div class="panel-title">📍 撮影場所の位置情報 (GPS)</div>
         <div class="badge-val" id="gpsBadge">未設定</div>
       </div>
-      <small style="color: var(--text-muted);">地図上をタップ／クリックするとその地点にピンが立ち、位置情報が画像に埋め込まれます🗺️</small>
+      <small style="color: var(--text-muted);">地図上をクリックするとその地点にピンが立ち、位置情報が画像に埋め込まれます🗺️</small>
       
       <div id="map"></div>
 
@@ -437,9 +436,12 @@
         mapMarker = L.marker([currentGps.lat, currentGps.lng]).addTo(map);
       }
 
-      if (moveMap) {
-        map.setView([currentGps.lat, currentGps.lng], 16);
-      }
+      setTimeout(() => {
+        map.invalidateSize();
+        if (moveMap) {
+          map.setView([currentGps.lat, currentGps.lng], 16);
+        }
+      }, 50);
     }
 
     function clearGps() {
@@ -485,7 +487,7 @@
 
     function drawPreview() {
       const w = previewCanvas.width = previewContainer.clientWidth * window.devicePixelRatio || 800;
-      const h = previewCanvas.height = previewContainer.clientHeight * window.devicePixelRatio || 200;
+      const h = previewCanvas.height = previewContainer.clientHeight * window.devicePixelRatio || 180;
       ctx.clearRect(0, 0, w, h);
 
       if (loadedImage) {
@@ -494,7 +496,7 @@
         ctx.fillStyle = '#0f172a';
         ctx.fillRect(0, 0, w, h);
         ctx.fillStyle = '#64748b';
-        ctx.font = `${14 * window.devicePixelRatio}px sans-serif`;
+        ctx.font = `${13 * window.devicePixelRatio}px sans-serif`;
         ctx.textAlign = 'center';
         ctx.fillText('画像を選択するとパノラマプレビューが表示されます', w / 2, h / 2);
       }
@@ -532,9 +534,9 @@
           else if (deg === 270) label = '西 (W)';
 
           ctx.fillStyle = isMajor ? '#38bdf8' : '#ffffff';
-          ctx.font = `bold ${11 * dpr}px sans-serif`;
+          ctx.font = `bold ${10 * dpr}px sans-serif`;
           ctx.textAlign = 'center';
-          ctx.fillText(label, x, 28 * dpr);
+          ctx.fillText(label, x, 26 * dpr);
         }
       }
       ctx.restore();
@@ -567,7 +569,7 @@
         startX = e.touches[0].clientX;
         startHeading = currentHeading;
       }
-    });
+    }, { passive: true });
     window.addEventListener('touchmove', (e) => {
       if (!isDragging || e.touches.length !== 1) return;
       const dx = e.touches[0].clientX - startX;
@@ -575,10 +577,13 @@
       let newHeading = (startHeading - Math.round((dx / width) * 360)) % 360;
       if (newHeading < 0) newHeading += 360;
       updateHeadingUI(newHeading);
-    });
+    }, { passive: true });
     window.addEventListener('touchend', () => { isDragging = false; });
 
-    window.addEventListener('resize', drawPreview);
+    window.addEventListener('resize', () => {
+      drawPreview();
+      map.invalidateSize();
+    });
 
     function switchMode() {
       mode = document.querySelector('input[name="mode"]:checked').value;
@@ -589,7 +594,7 @@
         modeDescription.textContent = 'パノラマ画像の方角（Heading）や撮影位置（GPS）を調整します。';
         primaryDropIcon.textContent = '🧭';
         primaryDropTitle.textContent = '対象の360度画像 (JPEG / PNG)';
-        primaryDropSub.textContent = '調整したいパノラマ画像（1枚）';
+        primaryDropSub.textContent = 'クリックまたはドラッグ＆ドロップで選択（1枚）';
         originalDrop.style.display = 'none';
         dropGrid.classList.add('single');
         processBtn.textContent = 'メタデータを更新して保存 💾';
@@ -616,16 +621,23 @@
     }
 
     function setupDropZone(dropZone, input, onFileSelected) {
-      dropZone.onclick = () => input.click();
+      dropZone.onclick = () => {
+        input.value = ''; // 同名ファイル再選択時にも発火するようにリセット
+        input.click();
+      };
       input.onchange = (e) => {
-        if (e.target.files.length) onFileSelected(e.target.files[0]);
+        if (e.target.files && e.target.files.length > 0) {
+          onFileSelected(e.target.files[0]);
+        }
       };
       dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('dragover'); };
       dropZone.ondragleave = () => { dropZone.classList.remove('dragover'); };
       dropZone.ondrop = (e) => {
         e.preventDefault();
         dropZone.classList.remove('dragover');
-        if (e.dataTransfer.files.length) onFileSelected(e.dataTransfer.files[0]);
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          onFileSelected(e.dataTransfer.files[0]);
+        }
       };
     }
 
@@ -651,11 +663,6 @@
 
     setupDropZone(editedDrop, editedInput, async (file) => {
       if (!file) return;
-      const isImg = file.type.match(/image\/(jpeg|jpg|png)/) || file.name.match(/\.(jpe?g|png)$/i);
-      if (!isImg) {
-        alert('⚠️ JPEGまたはPNG画像を選択してください！');
-        return;
-      }
       editedFile = file;
       const isPng = file.type.includes('png') || file.name.toLowerCase().endsWith('.png');
       const el = document.getElementById('editedFileName');
@@ -675,11 +682,6 @@
 
     setupDropZone(originalDrop, originalInput, async (file) => {
       if (!file) return;
-      const isJpg = file.type.match(/image\/(jpeg|jpg)/) || file.name.match(/\.jpe?g$/i);
-      if (!isJpg) {
-        alert('⚠️ 元画像はメタデータが含まれるJPEGファイル（.jpg / .jpeg）を選択してください！');
-        return;
-      }
       originalFile = file;
       const el = document.getElementById('originalFileName');
       el.textContent = `✓ ${file.name}`;
@@ -758,7 +760,7 @@
       for (const seg of appSegments) {
         if (seg[0] === 0xFF && seg[1] === 0xE1) {
           const str = new TextDecoder('utf-8', { fatal: false }).decode(seg);
-          const match = str.match(/GPano:(?:PoseHeadingDegrees|InitialViewHeadingDegrees)[=>"\s]+([0-9.]+)/i);
+          const match = str.match(/(?:GPano:PoseHeadingDegrees|GPano:InitialViewHeadingDegrees)[=>"\s]+([0-9.]+)/i);
           if (match) {
             return parseFloat(match[1]);
           }
@@ -767,15 +769,17 @@
       return null;
     }
 
+    // バイナリ直接比較による完全GPSパーサー
     function extractGpsCoordinates(buffer) {
       const bytes = new Uint8Array(buffer);
       const { appSegments } = parseJpegSegments(bytes);
 
+      // 1. XMP テキストからチェック
       for (const seg of appSegments) {
         if (seg[0] === 0xFF && seg[1] === 0xE1) {
           const str = new TextDecoder('utf-8', { fatal: false }).decode(seg);
-          const latMatch = str.match(/GPano:GPSLatitude[=>"\s]+([-0-9.]+)/i);
-          const lngMatch = str.match(/GPano:GPSLongitude[=>"\s]+([-0-9.]+)/i);
+          const latMatch = str.match(/(?:GPano:GPSLatitude|exif:GPSLatitude)[=>"\s]+([-0-9.]+)/i);
+          const lngMatch = str.match(/(?:GPano:GPSLongitude|exif:GPSLongitude)[=>"\s]+([-0-9.]+)/i);
           if (latMatch && lngMatch) {
             const lat = parseFloat(latMatch[1]);
             const lng = parseFloat(lngMatch[1]);
@@ -786,6 +790,7 @@
         }
       }
 
+      // 2. Exif GPS IFD バイナリから直接抽出
       try {
         const view = new DataView(buffer);
         let offset = 2;
@@ -796,12 +801,11 @@
           const length = view.getUint16(offset + 2, false);
           
           if (marker === 0xE1) {
-            const exifSig = new Uint8Array(buffer, offset + 4, 6);
-            const exifStr = new TextDecoder().decode(exifSig);
-            if (exifStr === "Exif\0\0") {
+            // 'Exif' 識別子 (0x45786966) を直接バイト判定
+            if (offset + 10 <= buffer.byteLength && view.getUint32(offset + 4, false) === 0x45786966) {
               const tiffOffset = offset + 10;
               const byteOrder = view.getUint16(tiffOffset, false);
-              const isLE = (byteOrder === 0x4949);
+              const isLE = (byteOrder === 0x4949); // 'II' = true, 'MM' = false
 
               const ifd0Offset = tiffOffset + view.getUint32(tiffOffset + 4, isLE);
               if (ifd0Offset < buffer.byteLength - 2) {
@@ -811,7 +815,7 @@
                   const entry = ifd0Offset + 2 + i * 12;
                   if (entry + 12 > buffer.byteLength) break;
                   const tag = view.getUint16(entry, isLE);
-                  if (tag === 0x8825) {
+                  if (tag === 0x8825) { // GPSInfo IFD
                     gpsIfdOffset = tiffOffset + view.getUint32(entry + 8, isLE);
                     break;
                   }
@@ -827,32 +831,32 @@
                     if (gEntry + 12 > buffer.byteLength) break;
                     const gTag = view.getUint16(gEntry, isLE);
                     
-                    if (gTag === 0x0001) {
+                    if (gTag === 0x0001) { // GPSLatitudeRef
                       latRef = String.fromCharCode(view.getUint8(gEntry + 8));
-                    } else if (gTag === 0x0003) {
+                    } else if (gTag === 0x0003) { // GPSLongitudeRef
                       lonRef = String.fromCharCode(view.getUint8(gEntry + 8));
-                    } else if (gTag === 0x0002) {
+                    } else if (gTag === 0x0002) { // GPSLatitude
                       const p = tiffOffset + view.getUint32(gEntry + 8, isLE);
                       if (p + 24 <= buffer.byteLength) {
-                        const deg = view.getUint32(p, isLE) / view.getUint32(p + 4, isLE);
-                        const min = view.getUint32(p + 8, isLE) / view.getUint32(p + 12, isLE);
-                        const sec = view.getUint32(p + 16, isLE) / view.getUint32(p + 20, isLE);
+                        const deg = view.getUint32(p, isLE) / (view.getUint32(p + 4, isLE) || 1);
+                        const min = view.getUint32(p + 8, isLE) / (view.getUint32(p + 12, isLE) || 1);
+                        const sec = view.getUint32(p + 16, isLE) / (view.getUint32(p + 20, isLE) || 1);
                         latVal = deg + min / 60 + sec / 3600;
                       }
-                    } else if (gTag === 0x0004) {
+                    } else if (gTag === 0x0004) { // GPSLongitude
                       const p = tiffOffset + view.getUint32(gEntry + 8, isLE);
                       if (p + 24 <= buffer.byteLength) {
-                        const deg = view.getUint32(p, isLE) / view.getUint32(p + 4, isLE);
-                        const min = view.getUint32(p + 8, isLE) / view.getUint32(p + 12, isLE);
-                        const sec = view.getUint32(p + 16, isLE) / view.getUint32(p + 20, isLE);
+                        const deg = view.getUint32(p, isLE) / (view.getUint32(p + 4, isLE) || 1);
+                        const min = view.getUint32(p + 8, isLE) / (view.getUint32(p + 12, isLE) || 1);
+                        const sec = view.getUint32(p + 16, isLE) / (view.getUint32(p + 20, isLE) || 1);
                         lonVal = deg + min / 60 + sec / 3600;
                       }
                     }
                   }
 
                   if (latVal !== null && lonVal !== null) {
-                    const finalLat = (latRef === 'S' ? -1 : 1) * latVal;
-                    const finalLng = (lonRef === 'W' ? -1 : 1) * lonVal;
+                    const finalLat = (latRef.toUpperCase() === 'S' ? -1 : 1) * latVal;
+                    const finalLng = (lonRef.toUpperCase() === 'W' ? -1 : 1) * lonVal;
                     if (Math.abs(finalLat) > 0.0001 || Math.abs(finalLng) > 0.0001) {
                       return { lat: finalLat, lng: finalLng };
                     }
