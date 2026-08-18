@@ -1,6 +1,6 @@
 <!--
   360-degree Image Metadata Injector, Cloner, Heading & GPS Adjuster (pano-fixer)
-  Copyright (c) 2026 MrHiraiwa
+  Copyright (c) 2026 Masatoshi Hiraiwa
   SPDX-License-Identifier: MIT
 -->
 <!DOCTYPE html>
@@ -211,12 +211,36 @@
     }
     .preset-btn:hover { border-color: var(--primary); color: var(--primary); }
 
+    .map-tools {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 8px;
+      margin-bottom: 6px;
+      gap: 8px;
+    }
+    .current-loc-btn {
+      background: #3b82f6;
+      color: #fff;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: bold;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: background 0.15s ease;
+      white-space: nowrap;
+    }
+    .current-loc-btn:hover { background: #2563eb; }
+
     #map {
       width: 100%;
-      height: 200px;
+      height: 220px;
       border-radius: 10px;
       border: 1px solid var(--border);
-      margin-top: 8px;
       z-index: 1;
     }
     .gps-inputs {
@@ -384,10 +408,14 @@
     <!-- 2. 位置情報（GPS）調整パネル -->
     <div class="control-panel">
       <div class="panel-header">
-        <div class="panel-title">📍 撮影場所の位置情報 (GPS)</div>
+        <div class="panel-title">📍 撮影場所の位置情報 (GPS) ＆ 方角ビーム</div>
         <div class="badge-val" id="gpsBadge">未設定</div>
       </div>
-      <small style="color: var(--text-muted);">地図上をクリックするとその地点にピンが立ち、位置情報が画像に埋め込まれます🗺️</small>
+
+      <div class="map-tools">
+        <small style="color: var(--text-muted);">地図上の青い扇形ビームが写真の正面向きを示します🧭</small>
+        <button type="button" class="current-loc-btn" onclick="fetchCurrentLocation()">📍 現在地を取得</button>
+      </div>
       
       <div id="map"></div>
 
@@ -471,6 +499,64 @@
     }).addTo(map);
 
     let mapMarker = null;
+    let headingConeLayer = null;
+
+    // 地図上のストリートビュー風・方角インジケーター（扇形ビーム＋中心線）を描画
+    function updateMapHeadingIndicator() {
+      if (!currentGps) {
+        if (headingConeLayer) {
+          map.removeLayer(headingConeLayer);
+          headingConeLayer = null;
+        }
+        return;
+      }
+
+      if (headingConeLayer) {
+        map.removeLayer(headingConeLayer);
+      }
+
+      const center = [currentGps.lat, currentGps.lng];
+      const radiusMeters = 35; // ビームの長さ (メートル)
+      const fov = 80; // 視野角 (度)
+      const startDeg = currentHeading - (fov / 2);
+      const endDeg = currentHeading + (fov / 2);
+
+      const latRad = center[0] * Math.PI / 180;
+      const metersPerLat = 111320;
+      const metersPerLng = 40075000 * Math.cos(latRad) / 360;
+
+      const getPoint = (deg, dist) => {
+        const rad = deg * Math.PI / 180;
+        const dLat = (dist * Math.cos(rad)) / metersPerLat;
+        const dLng = (dist * Math.sin(rad)) / metersPerLng;
+        return [center[0] + dLat, center[1] + dLng];
+      };
+
+      const points = [center];
+      for (let d = startDeg; d <= endDeg; d += 5) {
+        points.push(getPoint(d, radiusMeters));
+      }
+      points.push(getPoint(endDeg, radiusMeters));
+      points.push(center);
+
+      // 正面中央ライン
+      const centerLineTarget = getPoint(currentHeading, radiusMeters * 1.25);
+
+      const conePolygon = L.polygon(points, {
+        color: '#2563eb',
+        fillColor: '#3b82f6',
+        fillOpacity: 0.35,
+        weight: 1.5
+      });
+
+      const centerLine = L.polyline([center, centerLineTarget], {
+        color: '#ef4444',
+        weight: 2.5,
+        dashArray: '3, 4'
+      });
+
+      headingConeLayer = L.layerGroup([conePolygon, centerLine]).addTo(map);
+    }
 
     map.on('click', (e) => {
       setGps(e.latlng.lat, e.latlng.lng, true);
@@ -488,12 +574,35 @@
         mapMarker = L.marker([currentGps.lat, currentGps.lng]).addTo(map);
       }
 
+      updateMapHeadingIndicator();
+
       setTimeout(() => {
         map.invalidateSize();
         if (moveMap) {
-          map.setView([currentGps.lat, currentGps.lng], 16);
+          map.setView([currentGps.lat, currentGps.lng], 17);
         }
       }, 50);
+    }
+
+    function fetchCurrentLocation() {
+      if (!navigator.geolocation) {
+        alert('お使いのブラウザは現在地取得（GPS）に対応していません。');
+        return;
+      }
+      log(`📡 スマホの現在地GPSを取得中...`, 'info');
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          log(`📍 現在地取得成功: ${lat.toFixed(6)}°, ${lng.toFixed(6)}° (精度: 約${Math.round(pos.coords.accuracy)}m)`, 'success');
+          setGps(lat, lng, true);
+        },
+        (err) => {
+          log(`❌ 現在地取得失敗: ${err.message}`, 'error');
+          alert('現在地を取得できませんでした。位置情報の利用を許可してください。');
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
     }
 
     function clearGps() {
@@ -505,6 +614,7 @@
         map.removeLayer(mapMarker);
         mapMarker = null;
       }
+      updateMapHeadingIndicator();
     }
 
     function onManualGpsChange() {
@@ -531,6 +641,7 @@
       headingValText.textContent = `${currentHeading}° (${getDirectionName(currentHeading)})`;
       headingSlider.value = currentHeading;
       drawPreview();
+      updateMapHeadingIndicator(); // 地図側の方角ビームもリアルタイム回転
     }
 
     function setHeading(val) {
@@ -1087,7 +1198,8 @@
         tiffData = new Uint8Array([
           0x49, 0x49, 0x2A, 0x00, 0x08, 0x00, 0x00, 0x00,
           0x01, 0x00,
-          0x12, 0x01, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+          0x12, 0x01, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00,
+          0x01, 0x00, 0x00, 0x00,
           0x00, 0x00, 0x00, 0x00
         ]);
       } else {
