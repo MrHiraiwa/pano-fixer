@@ -1,6 +1,6 @@
 <!--
   360-degree Image Metadata Injector, Cloner, Heading & GPS Adjuster (pano-fixer)
-  Copyright (c) 2026 Masatoshi Hiraiwa
+  Copyright (c) 2026 MrHiraiwa
   SPDX-License-Identifier: MIT
 -->
 <!DOCTYPE html>
@@ -622,7 +622,7 @@
 
     function setupDropZone(dropZone, input, onFileSelected) {
       dropZone.onclick = () => {
-        input.value = ''; // 同名ファイル再選択時にも発火するようにリセット
+        input.value = '';
         input.click();
       };
       input.onchange = (e) => {
@@ -769,21 +769,47 @@
       return null;
     }
 
-    // バイナリ直接比較による完全GPSパーサー
+    // XMP文字列のGPS座標パーサー (10進数、度分秒、カンマ区切り対応)
+    function parseXmpCoordinate(str) {
+      if (!str) return null;
+      str = str.trim();
+      const num = parseFloat(str);
+      if (!isNaN(num) && !str.includes(',')) {
+        return num;
+      }
+      // "35,12.3456N" または "136,54.789E" または "35,12,34.56N"
+      const parts = str.split(/[, ]+/);
+      if (parts.length >= 2) {
+        const d = parseFloat(parts[0]) || 0;
+        const m = parseFloat(parts[1]) || 0;
+        let s = 0;
+        let ref = '';
+        if (parts.length >= 3) {
+          s = parseFloat(parts[2]) || 0;
+        }
+        const last = parts[parts.length - 1].toUpperCase();
+        if (last.includes('S') || last.includes('W')) ref = '-';
+        const val = d + (m / 60) + (s / 3600);
+        return ref === '-' ? -val : val;
+      }
+      return null;
+    }
+
+    // 全バリエーション完全対応のGPSパーサー
     function extractGpsCoordinates(buffer) {
       const bytes = new Uint8Array(buffer);
       const { appSegments } = parseJpegSegments(bytes);
 
-      // 1. XMP テキストからチェック
+      // 1. XMP テキストから全タグ名チェック
       for (const seg of appSegments) {
         if (seg[0] === 0xFF && seg[1] === 0xE1) {
           const str = new TextDecoder('utf-8', { fatal: false }).decode(seg);
-          const latMatch = str.match(/(?:GPano:GPSLatitude|exif:GPSLatitude)[=>"\s]+([-0-9.]+)/i);
-          const lngMatch = str.match(/(?:GPano:GPSLongitude|exif:GPSLongitude)[=>"\s]+([-0-9.]+)/i);
+          const latMatch = str.match(/(?:GPano:GPSLatitude|exif:GPSLatitude|GPSLatitude)[=>"\s]+["']?([^"'>\s]+)/i);
+          const lngMatch = str.match(/(?:GPano:GPSLongitude|exif:GPSLongitude|GPSLongitude)[=>"\s]+["']?([^"'>\s]+)/i);
           if (latMatch && lngMatch) {
-            const lat = parseFloat(latMatch[1]);
-            const lng = parseFloat(lngMatch[1]);
-            if (Math.abs(lat) > 0.0001 || Math.abs(lng) > 0.0001) {
+            const lat = parseXmpCoordinate(latMatch[1]);
+            const lng = parseXmpCoordinate(lngMatch[1]);
+            if (lat !== null && lng !== null && (Math.abs(lat) > 0.0001 || Math.abs(lng) > 0.0001)) {
               return { lat, lng };
             }
           }
@@ -801,11 +827,10 @@
           const length = view.getUint16(offset + 2, false);
           
           if (marker === 0xE1) {
-            // 'Exif' 識別子 (0x45786966) を直接バイト判定
             if (offset + 10 <= buffer.byteLength && view.getUint32(offset + 4, false) === 0x45786966) {
               const tiffOffset = offset + 10;
               const byteOrder = view.getUint16(tiffOffset, false);
-              const isLE = (byteOrder === 0x4949); // 'II' = true, 'MM' = false
+              const isLE = (byteOrder === 0x4949);
 
               const ifd0Offset = tiffOffset + view.getUint32(tiffOffset + 4, isLE);
               if (ifd0Offset < buffer.byteLength - 2) {
@@ -831,11 +856,11 @@
                     if (gEntry + 12 > buffer.byteLength) break;
                     const gTag = view.getUint16(gEntry, isLE);
                     
-                    if (gTag === 0x0001) { // GPSLatitudeRef
+                    if (gTag === 0x0001) {
                       latRef = String.fromCharCode(view.getUint8(gEntry + 8));
-                    } else if (gTag === 0x0003) { // GPSLongitudeRef
+                    } else if (gTag === 0x0003) {
                       lonRef = String.fromCharCode(view.getUint8(gEntry + 8));
-                    } else if (gTag === 0x0002) { // GPSLatitude
+                    } else if (gTag === 0x0002) {
                       const p = tiffOffset + view.getUint32(gEntry + 8, isLE);
                       if (p + 24 <= buffer.byteLength) {
                         const deg = view.getUint32(p, isLE) / (view.getUint32(p + 4, isLE) || 1);
@@ -843,7 +868,7 @@
                         const sec = view.getUint32(p + 16, isLE) / (view.getUint32(p + 20, isLE) || 1);
                         latVal = deg + min / 60 + sec / 3600;
                       }
-                    } else if (gTag === 0x0004) { // GPSLongitude
+                    } else if (gTag === 0x0004) {
                       const p = tiffOffset + view.getUint32(gEntry + 8, isLE);
                       if (p + 24 <= buffer.byteLength) {
                         const deg = view.getUint32(p, isLE) / (view.getUint32(p + 4, isLE) || 1);
