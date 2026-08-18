@@ -267,7 +267,6 @@
       min-height: 20px;
     }
 
-    /* デバッグ診断パネル */
     .debug-panel {
       margin-top: 24px;
       background: #0f172a;
@@ -694,7 +693,6 @@
       };
     }
 
-    // 詳細診断機能付きメタデータ解析
     async function inspectAndApplyMetadata(file) {
       if (!file) return;
       clearLog();
@@ -715,12 +713,8 @@
           return;
         }
 
-        // 1. 全APPセグメントのスキャン
         const { appSegments } = parseJpegSegments(bytes);
         log(`📦 検出されたAPPセグメント数: ${appSegments.length} 個`, 'info');
-        
-        let foundExif = false;
-        let foundXmp = false;
 
         appSegments.forEach((seg, idx) => {
           const marker = seg[1].toString(16).toUpperCase();
@@ -729,18 +723,12 @@
           
           if (seg[1] === 0xE1) {
             const sig = new TextDecoder('utf-8', { fatal: false }).decode(seg.subarray(4, 32));
-            if (sig.startsWith("Exif")) {
-              desc += " (Exif TIFF Header)";
-              foundExif = true;
-            } else if (sig.startsWith("http://ns.adobe.com/xap/1.0/")) {
-              desc += " (Adobe XMP Metadata)";
-              foundXmp = true;
-            }
+            if (sig.startsWith("Exif")) desc += " (Exif TIFF Header)";
+            else if (sig.startsWith("http://ns.adobe.com/xap/1.0/")) desc += " (Adobe XMP Metadata)";
           }
           log(`  [Segment ${idx + 1}] 0xFF${marker} (${desc}) - ${len} bytes`);
         });
 
-        // 2. 方角（Heading）の診断
         const existingHeading = extractHeadingDegrees(buf);
         if (existingHeading !== null) {
           log(`🧭 [検出成功] 方角 (Heading): ${existingHeading}°`, 'success');
@@ -749,13 +737,13 @@
           log(`🧭 方角タグ (PoseHeadingDegrees) は見つかりませんでした (0°をセット)`, 'warn');
         }
 
-        // 3. 位置情報（GPS）の診断
         const existingGps = extractGpsCoordinatesWithDebug(buf);
         if (existingGps) {
           log(`📍 [検出成功] 位置情報 (GPS): 緯度 ${existingGps.lat.toFixed(6)}°, 経度 ${existingGps.lng.toFixed(6)}°`, 'success');
           setGps(existingGps.lat, existingGps.lng, true);
         } else {
-          log(`📍 位置情報 (GPS) は検出されませんでした`, 'warn');
+          log(`📍 有効な位置情報 (GPS) は検出されませんでした（未設定のまま維持します）`, 'warn');
+          clearGps();
         }
 
       } catch (e) {
@@ -894,14 +882,12 @@
       return null;
     }
 
-    // デバッグログ付きGPSパーサー
     function extractGpsCoordinatesWithDebug(buffer) {
       const bytes = new Uint8Array(buffer);
       const { appSegments } = parseJpegSegments(bytes);
 
       log(`--- 🔍 GPSメタデータ詳細解析 ---`, 'info');
 
-      // 1. XMP テキスト探索
       for (const seg of appSegments) {
         if (seg[0] === 0xFF && seg[1] === 0xE1) {
           const str = new TextDecoder('utf-8', { fatal: false }).decode(seg);
@@ -917,6 +903,8 @@
               if (lat !== null && lng !== null && (Math.abs(lat) > 0.0001 || Math.abs(lng) > 0.0001)) {
                 log(`  ✅ XMPから有効な座標をパース完了: ${lat}, ${lng}`, 'success');
                 return { lat, lng };
+              } else {
+                log(`  ⚠️ XMP座標は (0.0, 0.0) のため未測位として判定`, 'warn');
               }
             } else {
               log(`  ℹ️ XMP内にGPSタグ (GPSLatitude/GPSLongitude) は見つかりませんでした。`);
@@ -925,7 +913,6 @@
         }
       }
 
-      // 2. Exif GPS IFD バイナリ探索
       try {
         const view = new DataView(buffer);
         let offset = 2;
@@ -1005,11 +992,16 @@
                   if (latVal !== null && lonVal !== null) {
                     const finalLat = (latRef.toUpperCase() === 'S' ? -1 : 1) * latVal;
                     const finalLng = (lonRef.toUpperCase() === 'W' ? -1 : 1) * lonVal;
-                    log(`  ✅ Exif GPS IFDから座標取得完了: Lat=${finalLat.toFixed(6)}, Lng=${finalLng.toFixed(6)}`, 'success');
-                    return { lat: finalLat, lng: finalLng };
+                    
+                    if (Math.abs(finalLat) > 0.0001 || Math.abs(finalLng) > 0.0001) {
+                      log(`  ✅ Exif GPS IFDから有効な座標取得完了: Lat=${finalLat.toFixed(6)}, Lng=${finalLng.toFixed(6)}`, 'success');
+                      return { lat: finalLat, lng: finalLng };
+                    } else {
+                      log(`  ⚠️ ExifのGPS生値が (0.0, 0.0) のため未測位（無効）としてスキップ`, 'warn');
+                    }
                   }
                 } else {
-                  log(`  ⚠️ IFD0内に GPSInfo IFD (Tag 0x8825) が存在しませんでした。`, 'warn');
+                  log(`  ℹ️ IFD0内に GPSInfo IFD (Tag 0x8825) は存在しませんでした。`);
                 }
               }
             }
