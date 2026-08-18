@@ -306,7 +306,7 @@
       <div class="drop-zone" id="editedDrop">
         <div class="drop-icon" id="primaryDropIcon">🧭</div>
         <div class="drop-title" id="primaryDropTitle">対象の360度画像 (JPEG / PNG)</div>
-        <div class="drop-sub" id="primaryDropSub">ドラッグ＆ドロップで選択</div>
+        <div class="drop-sub" id="primaryDropSub">ドラッグ＆ドロップまたはタップで選択</div>
         <div class="file-name" id="editedFileName" style="display: none;"></div>
         <input type="file" id="editedInput" accept="image/jpeg,image/jpg,image/png" style="display: none;">
       </div>
@@ -353,7 +353,7 @@
         <div class="panel-title">📍 撮影場所の位置情報 (GPS)</div>
         <div class="badge-val" id="gpsBadge">未設定</div>
       </div>
-      <small style="color: var(--text-muted);">地図上をクリックするとその地点にピンが立ち、位置情報が画像に埋め込まれます🗺️</small>
+      <small style="color: var(--text-muted);">地図上をタップ／クリックするとその地点にピンが立ち、位置情報が画像に埋め込まれます🗺️</small>
       
       <div id="map"></div>
 
@@ -495,7 +495,7 @@
         ctx.fillStyle = '#64748b';
         ctx.font = `${14 * window.devicePixelRatio}px sans-serif`;
         ctx.textAlign = 'center';
-        ctx.fillText('画像をドロップするとここにパノラマプレビューが表示されます', w / 2, h / 2);
+        ctx.fillText('画像を選択するとパノラマプレビューが表示されます', w / 2, h / 2);
       }
 
       drawCompassRuler(w, h);
@@ -628,7 +628,6 @@
       };
     }
 
-    // 画像ドロップ時の共通メタデータ（Heading/GPS）抽出処理
     async function inspectAndApplyMetadata(file) {
       if (!file || file.type.includes('png')) return;
       try {
@@ -664,7 +663,6 @@
       };
       img.src = URL.createObjectURL(file);
 
-      // ドロップされたファイルから即座にメタデータを抽出してUI反映
       await inspectAndApplyMetadata(file);
     });
 
@@ -709,7 +707,7 @@
     function parseJpegSegments(bytes) {
       const appSegments = [];
       const otherSegments = [];
-      let i = 2; // 0xFFD8
+      let i = 2;
 
       while (i < bytes.length - 1) {
         if (bytes[i] === 0xFF) {
@@ -744,7 +742,6 @@
       return { appSegments, otherSegments };
     }
 
-    // APP1セグメントからGPanoの方角（Heading）を確実に抽出
     function extractHeadingDegrees(buffer) {
       const bytes = new Uint8Array(buffer);
       const { appSegments } = parseJpegSegments(bytes);
@@ -761,12 +758,12 @@
       return null;
     }
 
-    // APP1セグメントからGPS座標を抽出
+    // II (Little Endian) / MM (Big Endian) 両対応のExif GPSパーサー
     function extractGpsCoordinates(buffer) {
       const bytes = new Uint8Array(buffer);
       const { appSegments } = parseJpegSegments(bytes);
 
-      // 1. XMPテキストから探す
+      // 1. XMP テキストからチェック
       for (const seg of appSegments) {
         if (seg[0] === 0xFF && seg[1] === 0xE1) {
           const str = new TextDecoder('utf-8', { fatal: false }).decode(seg);
@@ -782,68 +779,77 @@
         }
       }
 
-      // 2. Exif GPS IFDバイナリから探す
+      // 2. Exif GPS IFD バイナリからチェック
       try {
         const view = new DataView(buffer);
         let offset = 2;
-        while (offset < buffer.byteLength) {
+        while (offset < buffer.byteLength - 4) {
           if (view.getUint8(offset) !== 0xFF) break;
           const marker = view.getUint8(offset + 1);
           if (marker === 0xDA || marker === 0xD9) break;
-          const length = view.getUint16(offset + 2);
+          const length = view.getUint16(offset + 2, false);
           
           if (marker === 0xE1) {
             const exifSig = new Uint8Array(buffer, offset + 4, 6);
             const exifStr = new TextDecoder().decode(exifSig);
             if (exifStr === "Exif\0\0") {
               const tiffOffset = offset + 10;
-              const isLE = view.getUint16(tiffOffset) === 0x4949;
+              const byteOrder = view.getUint16(tiffOffset, false);
+              const isLE = (byteOrder === 0x4949); // 'II' = true, 'MM' = false
+
               const ifd0Offset = tiffOffset + view.getUint32(tiffOffset + 4, isLE);
-              const numEntries = view.getUint16(ifd0Offset, isLE);
-              
-              let gpsIfdOffset = 0;
-              for (let i = 0; i < numEntries; i++) {
-                const entry = ifd0Offset + 2 + i * 12;
-                const tag = view.getUint16(entry, isLE);
-                if (tag === 0x8825) {
-                  gpsIfdOffset = tiffOffset + view.getUint32(entry + 8, isLE);
-                  break;
-                }
-              }
-
-              if (gpsIfdOffset > 0) {
-                const gpsEntries = view.getUint16(gpsIfdOffset, isLE);
-                let latRef = 'N', lonRef = 'E';
-                let latVal = null, lonVal = null;
-
-                for (let j = 0; j < gpsEntries; j++) {
-                  const gEntry = gpsIfdOffset + 2 + j * 12;
-                  const gTag = view.getUint16(gEntry, isLE);
-                  
-                  if (gTag === 0x0001) {
-                    latRef = String.fromCharCode(view.getUint8(gEntry + 8));
-                  } else if (gTag === 0x0003) {
-                    lonRef = String.fromCharCode(view.getUint8(gEntry + 8));
-                  } else if (gTag === 0x0002) {
-                    const p = tiffOffset + view.getUint32(gEntry + 8, isLE);
-                    const deg = view.getUint32(p, isLE) / view.getUint32(p + 4, isLE);
-                    const min = view.getUint32(p + 8, isLE) / view.getUint32(p + 12, isLE);
-                    const sec = view.getUint32(p + 16, isLE) / view.getUint32(p + 20, isLE);
-                    latVal = deg + min / 60 + sec / 3600;
-                  } else if (gTag === 0x0004) {
-                    const p = tiffOffset + view.getUint32(gEntry + 8, isLE);
-                    const deg = view.getUint32(p, isLE) / view.getUint32(p + 4, isLE);
-                    const min = view.getUint32(p + 8, isLE) / view.getUint32(p + 12, isLE);
-                    const sec = view.getUint32(p + 16, isLE) / view.getUint32(p + 20, isLE);
-                    lonVal = deg + min / 60 + sec / 3600;
+              if (ifd0Offset < buffer.byteLength - 2) {
+                const numEntries = view.getUint16(ifd0Offset, isLE);
+                let gpsIfdOffset = 0;
+                for (let i = 0; i < numEntries; i++) {
+                  const entry = ifd0Offset + 2 + i * 12;
+                  if (entry + 12 > buffer.byteLength) break;
+                  const tag = view.getUint16(entry, isLE);
+                  if (tag === 0x8825) {
+                    gpsIfdOffset = tiffOffset + view.getUint32(entry + 8, isLE);
+                    break;
                   }
                 }
 
-                if (latVal !== null && lonVal !== null) {
-                  const finalLat = (latRef === 'S' ? -1 : 1) * latVal;
-                  const finalLng = (lonRef === 'W' ? -1 : 1) * lonVal;
-                  if (Math.abs(finalLat) > 0.0001 || Math.abs(finalLng) > 0.0001) {
-                    return { lat: finalLat, lng: finalLng };
+                if (gpsIfdOffset > 0 && gpsIfdOffset < buffer.byteLength - 2) {
+                  const gpsEntries = view.getUint16(gpsIfdOffset, isLE);
+                  let latRef = 'N', lonRef = 'E';
+                  let latVal = null, lonVal = null;
+
+                  for (let j = 0; j < gpsEntries; j++) {
+                    const gEntry = gpsIfdOffset + 2 + j * 12;
+                    if (gEntry + 12 > buffer.byteLength) break;
+                    const gTag = view.getUint16(gEntry, isLE);
+                    
+                    if (gTag === 0x0001) {
+                      latRef = String.fromCharCode(view.getUint8(gEntry + 8));
+                    } else if (gTag === 0x0003) {
+                      lonRef = String.fromCharCode(view.getUint8(gEntry + 8));
+                    } else if (gTag === 0x0002) {
+                      const p = tiffOffset + view.getUint32(gEntry + 8, isLE);
+                      if (p + 24 <= buffer.byteLength) {
+                        const deg = view.getUint32(p, isLE) / view.getUint32(p + 4, isLE);
+                        const min = view.getUint32(p + 8, isLE) / view.getUint32(p + 12, isLE);
+                        const sec = view.getUint32(p + 16, isLE) / view.getUint32(p + 20, isLE);
+                        latVal = deg + min / 60 + sec / 3600;
+                      }
+                    } else if (gTag === 0x0004) {
+                      const p = tiffOffset + view.getUint32(gEntry + 8, isLE);
+                      if (p + 24 <= buffer.byteLength) {
+                        const deg = view.getUint32(p, isLE) / view.getUint32(p + 4, isLE);
+                        const min = view.getUint32(p + 8, isLE) / view.getUint32(p + 12, isLE);
+                        const sec = view.getUint32(p + 16, isLE) / view.getUint32(p + 20, isLE);
+                        lonVal = deg + min / 60 + sec / 3600;
+                      }
+                    }
+                  }
+
+                  if (latVal !== null && lonVal !== null) {
+                    const finalLat = (latRef === 'S' ? -1 : 1) * latVal;
+                    const finalLng = (lonRef === 'W' ? -1 : 1) * lonVal;
+                    if (Math.abs(finalLat) > 0.0001 || Math.abs(finalLng) > 0.0001) {
+                      return { lat: finalLat, lng: finalLng };
+                    }
                   }
                 }
               }
@@ -930,7 +936,8 @@
         tiffData = new Uint8Array([
           0x49, 0x49, 0x2A, 0x00, 0x08, 0x00, 0x00, 0x00,
           0x01, 0x00,
-          0x12, 0x01, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+          0x12, 0x01, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00,
+          0x01, 0x00, 0x00, 0x00,
           0x00, 0x00, 0x00, 0x00
         ]);
       } else {
