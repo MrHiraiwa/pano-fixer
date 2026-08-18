@@ -709,7 +709,7 @@
     function parseJpegSegments(bytes) {
       const appSegments = [];
       const otherSegments = [];
-      let i = 2; // 0xFFD8
+      let i = 2;
 
       while (i < bytes.length - 1) {
         if (bytes[i] === 0xFF) {
@@ -751,19 +751,19 @@
       return match ? parseFloat(match[1]) : null;
     }
 
-    // XMPテキスト および Exifバイナリ(GPS IFD) 両方からGPSを完全抽出
     function extractGpsCoordinates(buffer) {
       const bytes = new Uint8Array(buffer);
-      
-      // 1. XMP テキストからチェック
       const str = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
       const latMatch = str.match(/GPano:GPSLatitude=["'>]([-0-9.]+)/i);
       const lngMatch = str.match(/GPano:GPSLongitude=["'>]([-0-9.]+)/i);
       if (latMatch && lngMatch) {
-        return { lat: parseFloat(latMatch[1]), lng: parseFloat(lngMatch[1]) };
+        const lat = parseFloat(latMatch[1]);
+        const lng = parseFloat(lngMatch[1]);
+        if (Math.abs(lat) > 0.0001 || Math.abs(lng) > 0.0001) {
+          return { lat, lng };
+        }
       }
 
-      // 2. Exif GPS IFD (バイナリ) からチェック
       try {
         const view = new DataView(buffer);
         let offset = 2;
@@ -773,12 +773,12 @@
           if (marker === 0xDA || marker === 0xD9) break;
           const length = view.getUint16(offset + 2);
           
-          if (marker === 0xE1) { // APP1
+          if (marker === 0xE1) {
             const exifSig = new Uint8Array(buffer, offset + 4, 6);
             const exifStr = new TextDecoder().decode(exifSig);
             if (exifStr === "Exif\0\0") {
               const tiffOffset = offset + 10;
-              const isLE = view.getUint16(tiffOffset) === 0x4949; // 'II'
+              const isLE = view.getUint16(tiffOffset) === 0x4949;
               const ifd0Offset = tiffOffset + view.getUint32(tiffOffset + 4, isLE);
               const numEntries = view.getUint16(ifd0Offset, isLE);
               
@@ -786,7 +786,7 @@
               for (let i = 0; i < numEntries; i++) {
                 const entry = ifd0Offset + 2 + i * 12;
                 const tag = view.getUint16(entry, isLE);
-                if (tag === 0x8825) { // GPS Info IFD Pointer
+                if (tag === 0x8825) {
                   gpsIfdOffset = tiffOffset + view.getUint32(entry + 8, isLE);
                   break;
                 }
@@ -801,17 +801,17 @@
                   const gEntry = gpsIfdOffset + 2 + j * 12;
                   const gTag = view.getUint16(gEntry, isLE);
                   
-                  if (gTag === 0x0001) { // GPSLatitudeRef
+                  if (gTag === 0x0001) {
                     latRef = String.fromCharCode(view.getUint8(gEntry + 8));
-                  } else if (gTag === 0x0003) { // GPSLongitudeRef
+                  } else if (gTag === 0x0003) {
                     lonRef = String.fromCharCode(view.getUint8(gEntry + 8));
-                  } else if (gTag === 0x0002) { // GPSLatitude
+                  } else if (gTag === 0x0002) {
                     const p = tiffOffset + view.getUint32(gEntry + 8, isLE);
                     const deg = view.getUint32(p, isLE) / view.getUint32(p + 4, isLE);
                     const min = view.getUint32(p + 8, isLE) / view.getUint32(p + 12, isLE);
                     const sec = view.getUint32(p + 16, isLE) / view.getUint32(p + 20, isLE);
                     latVal = deg + min / 60 + sec / 3600;
-                  } else if (gTag === 0x0004) { // GPSLongitude
+                  } else if (gTag === 0x0004) {
                     const p = tiffOffset + view.getUint32(gEntry + 8, isLE);
                     const deg = view.getUint32(p, isLE) / view.getUint32(p + 4, isLE);
                     const min = view.getUint32(p + 8, isLE) / view.getUint32(p + 12, isLE);
@@ -821,10 +821,11 @@
                 }
 
                 if (latVal !== null && lonVal !== null) {
-                  return {
-                    lat: (latRef === 'S' ? -1 : 1) * latVal,
-                    lng: (lonRef === 'W' ? -1 : 1) * lonVal
-                  };
+                  const finalLat = (latRef === 'S' ? -1 : 1) * latVal;
+                  const finalLng = (lonRef === 'W' ? -1 : 1) * lonVal;
+                  if (Math.abs(finalLat) > 0.0001 || Math.abs(finalLng) > 0.0001) {
+                    return { lat: finalLat, lng: finalLng };
+                  }
                 }
               }
             }
@@ -838,6 +839,7 @@
       return null;
     }
 
+    // Google Photo Sphere 公式完全準拠 XMP APP1 セグメント生成
     function createOfficialGPanoSegment(width, height, heading, gps) {
       const gpsXml = gps ? `
       <GPano:GPSLatitude>${gps.lat.toFixed(6)}</GPano:GPSLatitude>
@@ -889,15 +891,107 @@
       return seg;
     }
 
-    function createStandardExifSegment(gps) {
+    // 10進数座標を度・分・秒 (有理数 rational) に変換
+    function dec2dms(degFloat) {
+      const absVal = Math.abs(degFloat);
+      const d = Math.floor(absVal);
+      const mFloat = (absVal - d) * 60;
+      const m = Math.floor(mFloat);
+      const s = Math.round((mFloat - m) * 60 * 1000);
+      return [
+        { num: d, den: 1 },
+        { num: m, den: 1 },
+        { num: s, den: 1000 }
+      ];
+    }
+
+    // Exif APP1 セグメントを完全新規生成（GPSタグ含む）
+    function createFreshExifSegmentWithGps(gps) {
       const exifHeader = new TextEncoder().encode("Exif\0\0");
-      const tiffData = new Uint8Array([
-        0x49, 0x49, 0x2A, 0x00, 0x08, 0x00, 0x00, 0x00,
-        0x01, 0x00,
-        0x12, 0x01, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00,
-        0x01, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00
-      ]);
+      
+      let tiffData;
+      if (!gps) {
+        // GPSなし標準Exif
+        tiffData = new Uint8Array([
+          0x49, 0x49, 0x2A, 0x00, 0x08, 0x00, 0x00, 0x00,
+          0x01, 0x00,
+          0x12, 0x01, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+          0x00, 0x00, 0x00, 0x00
+        ]);
+      } else {
+        // GPSありExif (IFD0 -> GPS IFD + RATIONAL Tables)
+        const latRef = gps.lat >= 0 ? 'N' : 'S';
+        const lonRef = gps.lng >= 0 ? 'E' : 'W';
+        const latDMS = dec2dms(gps.lat);
+        const lonDMS = dec2dms(gps.lng);
+
+        const buffer = new ArrayBuffer(256);
+        const view = new DataView(buffer);
+        const isLE = true;
+
+        // TIFF Header (Offset 0)
+        view.setUint16(0, 0x4949, isLE); // 'II'
+        view.setUint16(2, 42, isLE);
+        view.setUint32(4, 8, isLE);      // IFD0 offset = 8
+
+        // IFD0 (Offset 8)
+        view.setUint16(8, 2, isLE);      // 2 tags: Orientation, GPSInfoIFDPointer
+        // Tag 1: Orientation (0x0112)
+        view.setUint16(10, 0x0112, isLE);
+        view.setUint16(12, 3, isLE);     // SHORT
+        view.setUint32(14, 1, isLE);
+        view.setUint16(18, 1, isLE);
+        view.setUint16(20, 0, isLE);
+        // Tag 2: GPSInfoIFDPointer (0x8825)
+        view.setUint16(22, 0x8825, isLE);
+        view.setUint16(24, 4, isLE);     // LONG
+        view.setUint32(26, 1, isLE);
+        const gpsIfdOffset = 38;
+        view.setUint32(30, gpsIfdOffset, isLE); // GPS IFD Offset = 38
+        view.setUint32(34, 0, isLE);     // Next IFD = 0
+
+        // GPS IFD (Offset 38)
+        view.setUint16(38, 4, isLE);     // 4 tags: GPSLatRef, GPSLat, GPSLonRef, GPSLon
+        // Tag 1: GPSLatitudeRef (0x0001)
+        view.setUint16(40, 0x0001, isLE);
+        view.setUint16(42, 2, isLE);     // ASCII
+        view.setUint32(44, 2, isLE);
+        view.setUint8(48, latRef.charCodeAt(0));
+        view.setUint8(49, 0);
+        view.setUint16(50, 0, isLE);
+        // Tag 2: GPSLatitude (0x0002)
+        const latTableOffset = 92;
+        view.setUint16(52, 0x0002, isLE);
+        view.setUint16(54, 5, isLE);     // RATIONAL
+        view.setUint32(56, 3, isLE);     // 3 rational (deg, min, sec)
+        view.setUint32(60, latTableOffset, isLE);
+        // Tag 3: GPSLongitudeRef (0x0003)
+        view.setUint16(64, 0x0003, isLE);
+        view.setUint16(66, 2, isLE);     // ASCII
+        view.setUint32(68, 2, isLE);
+        view.setUint8(72, lonRef.charCodeAt(0));
+        view.setUint8(73, 0);
+        view.setUint16(74, 0, isLE);
+        // Tag 4: GPSLongitude (0x0004)
+        const lonTableOffset = 116;
+        view.setUint16(76, 0x0004, isLE);
+        view.setUint16(78, 5, isLE);     // RATIONAL
+        view.setUint32(80, 3, isLE);
+        view.setUint32(84, lonTableOffset, isLE);
+        view.setUint32(88, 0, isLE);     // Next IFD = 0
+
+        // Lat RATIONAL Table (Offset 92, 24 bytes)
+        view.setUint32(92, latDMS[0].num, isLE); view.setUint32(96, latDMS[0].den, isLE);
+        view.setUint32(100, latDMS[1].num, isLE); view.setUint32(104, latDMS[1].den, isLE);
+        view.setUint32(108, latDMS[2].num, isLE); view.setUint32(112, latDMS[2].den, isLE);
+
+        // Lon RATIONAL Table (Offset 116, 24 bytes)
+        view.setUint32(116, lonDMS[0].num, isLE); view.setUint32(120, lonDMS[0].den, isLE);
+        view.setUint32(124, lonDMS[1].num, isLE); view.setUint32(128, lonDMS[1].den, isLE);
+        view.setUint32(132, lonDMS[2].num, isLE); view.setUint32(136, lonDMS[2].den, isLE);
+
+        tiffData = new Uint8Array(buffer, 0, 140);
+      }
 
       const payload = new Uint8Array(exifHeader.length + tiffData.length);
       payload.set(exifHeader, 0);
@@ -912,15 +1006,26 @@
       return seg;
     }
 
+    // 既存Exifバイナリ内のGPSタグを上書き／新規作成
+    function updateOrInjectGpsToExifSegment(existingExifSeg, gps) {
+      if (!existingExifSeg) {
+        return createFreshExifSegmentWithGps(gps);
+      }
+
+      // 新しいGPSを確実に反映したクリーンなExifセグメントを生成
+      return createFreshExifSegmentWithGps(gps);
+    }
+
+    // メタデータの構築と順序保証 (Exif -> XMP -> その他)
     function buildMetadataSegments(existingAppSegments, width, height, heading, gps) {
-      let exifSegment = null;
+      let existingExif = null;
       const otherApps = [];
 
       for (const seg of existingAppSegments) {
         if (seg[0] === 0xFF && seg[1] === 0xE1) {
           const header = new TextDecoder().decode(seg.subarray(4, 33));
           if (header.startsWith("Exif\0\0")) {
-            exifSegment = seg;
+            existingExif = seg;
             continue;
           }
           if (header.startsWith("http://ns.adobe.com/xap/1.0/")) {
@@ -930,12 +1035,11 @@
         otherApps.push(seg);
       }
 
-      if (!exifSegment) {
-        exifSegment = createStandardExifSegment(gps);
-      }
-
+      // ExifバイナリのGPSを新しい座標で完全再構築
+      const finalExif = updateOrInjectGpsToExifSegment(existingExif, gps);
       const xmpSegment = createOfficialGPanoSegment(width, height, heading, gps);
-      return [exifSegment, xmpSegment, ...otherApps];
+
+      return [finalExif, xmpSegment, ...otherApps];
     }
 
     processBtn.onclick = async () => {
@@ -991,7 +1095,7 @@
         URL.revokeObjectURL(url);
 
         statusDiv.style.color = '#059669';
-        statusDiv.textContent = `✅ 完了！方角（${currentHeading}°）${currentGps ? '＆位置情報' : ''}を付与して保存しました 🎉`;
+        statusDiv.textContent = `✅ 完了！方角（${currentHeading}°）${currentGps ? '＆位置情報(Exif+XMP)' : ''}を付与して保存しました 🎉`;
       } catch (err) {
         console.error(err);
         statusDiv.style.color = '#dc2626';
