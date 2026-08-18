@@ -308,7 +308,8 @@
         <div class="drop-title" id="primaryDropTitle">対象の360度画像 (JPEG / PNG)</div>
         <div class="drop-sub" id="primaryDropSub">ドラッグ＆ドロップまたはタップで選択</div>
         <div class="file-name" id="editedFileName" style="display: none;"></div>
-        <input type="file" id="editedInput" accept="image/jpeg,image/jpg,image/png" style="display: none;">
+        <!-- acceptを外してPixelのPhoto PickerによるGPS削除を回避 -->
+        <input type="file" id="editedInput" style="display: none;">
       </div>
 
       <div class="drop-zone" id="originalDrop" style="display: none;">
@@ -316,7 +317,7 @@
         <div class="drop-title">加工前の元画像 (JPEG)</div>
         <div class="drop-sub">撮影機器から直接取り出した元ファイル</div>
         <div class="file-name" id="originalFileName" style="display: none;"></div>
-        <input type="file" id="originalInput" accept="image/jpeg,image/jpg" style="display: none;">
+        <input type="file" id="originalInput" style="display: none;">
       </div>
     </div>
 
@@ -629,7 +630,10 @@
     }
 
     async function inspectAndApplyMetadata(file) {
-      if (!file || file.type.includes('png')) return;
+      if (!file) return;
+      const isPng = file.type.includes('png') || file.name.toLowerCase().endsWith('.png');
+      if (isPng) return;
+
       try {
         const buf = await file.arrayBuffer();
         const existingHeading = extractHeadingDegrees(buf);
@@ -646,13 +650,16 @@
     }
 
     setupDropZone(editedDrop, editedInput, async (file) => {
-      if (!file || !file.type.match(/image\/(jpeg|jpg|png)/)) {
+      if (!file) return;
+      const isImg = file.type.match(/image\/(jpeg|jpg|png)/) || file.name.match(/\.(jpe?g|png)$/i);
+      if (!isImg) {
         alert('⚠️ JPEGまたはPNG画像を選択してください！');
         return;
       }
       editedFile = file;
+      const isPng = file.type.includes('png') || file.name.toLowerCase().endsWith('.png');
       const el = document.getElementById('editedFileName');
-      el.textContent = `✓ ${file.name} (${file.type.includes('png') ? 'PNG ➔ 自動変換' : 'JPEG'})`;
+      el.textContent = `✓ ${file.name} (${isPng ? 'PNG ➔ 自動変換' : 'JPEG'})`;
       el.style.display = 'inline-block';
       
       const img = new Image();
@@ -667,7 +674,9 @@
     });
 
     setupDropZone(originalDrop, originalInput, async (file) => {
-      if (!file || !file.type.match(/image\/(jpeg|jpg)/)) {
+      if (!file) return;
+      const isJpg = file.type.match(/image\/(jpeg|jpg)/) || file.name.match(/\.jpe?g$/i);
+      if (!isJpg) {
         alert('⚠️ 元画像はメタデータが含まれるJPEGファイル（.jpg / .jpeg）を選択してください！');
         return;
       }
@@ -758,12 +767,10 @@
       return null;
     }
 
-    // II (Little Endian) / MM (Big Endian) 両対応のExif GPSパーサー
     function extractGpsCoordinates(buffer) {
       const bytes = new Uint8Array(buffer);
       const { appSegments } = parseJpegSegments(bytes);
 
-      // 1. XMP テキストからチェック
       for (const seg of appSegments) {
         if (seg[0] === 0xFF && seg[1] === 0xE1) {
           const str = new TextDecoder('utf-8', { fatal: false }).decode(seg);
@@ -779,7 +786,6 @@
         }
       }
 
-      // 2. Exif GPS IFD バイナリからチェック
       try {
         const view = new DataView(buffer);
         let offset = 2;
@@ -795,7 +801,7 @@
             if (exifStr === "Exif\0\0") {
               const tiffOffset = offset + 10;
               const byteOrder = view.getUint16(tiffOffset, false);
-              const isLE = (byteOrder === 0x4949); // 'II' = true, 'MM' = false
+              const isLE = (byteOrder === 0x4949);
 
               const ifd0Offset = tiffOffset + view.getUint32(tiffOffset + 4, isLE);
               if (ifd0Offset < buffer.byteLength - 2) {
@@ -936,8 +942,7 @@
         tiffData = new Uint8Array([
           0x49, 0x49, 0x2A, 0x00, 0x08, 0x00, 0x00, 0x00,
           0x01, 0x00,
-          0x12, 0x01, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00,
-          0x01, 0x00, 0x00, 0x00,
+          0x12, 0x01, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
           0x00, 0x00, 0x00, 0x00
         ]);
       } else {
@@ -1044,7 +1049,8 @@
       statusDiv.textContent = '⏳ 処理中...';
       try {
         let editedBuffer;
-        if (editedFile.type.includes('png')) {
+        const isPng = editedFile.type.includes('png') || editedFile.name.toLowerCase().endsWith('.png');
+        if (isPng) {
           statusDiv.textContent = '⏳ PNGを変換中...';
           editedBuffer = await convertImageToJpegBuffer(loadedImage);
         } else {
